@@ -1,0 +1,67 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: taperpay_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: taperpay_db
+      POSTGRES_USER: taper_user
+      POSTGRES_PASSWORD: taper_secure_2024
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taper_user -d taperpay_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - taperpay_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: taperpay_backend
+    restart: unless-stopped
+    environment:
+      - DOCKER_ENV=true
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+      - uploads_data:/app/static/uploads
+      - ./backend/app/static/avatars:/app/static/avatars
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    networks:
+      - taperpay_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    container_name: taperpay_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_URL=http://178.105.76.158
+      - VITE_WS_URL=ws://178.105.76.158
+      - VITE_BACKEND_URL=http://backend:8000
+      - VITE_BACKEND_WS_URL=ws://backend:8000
+    networks:
+      - taperpay_net
+
+volumes:
+  postgres_data:
+  uploads_data:
+
+networks:
+  taperpay_net:
+    driver: bridge

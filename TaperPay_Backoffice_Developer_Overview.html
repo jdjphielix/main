@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TaperPay Backoffice — Developer Overview</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --navy:       #011745;
+      --navy-mid:   #0a2d6b;
+      --blue:       #3d61a4;
+      --blue-light: #5a7fc2;
+      --blue-pale:  #eef2fa;
+      --off-white:  #f7f8fc;
+      --gray-100:   #e8eaf2;
+      --gray-200:   #cdd1e0;
+      --gray-300:   #a4abbe;
+      --gray-500:   #566079;
+      --gray-700:   #252f4a;
+      --gray-800:   #161d35;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--off-white);
+      color: var(--gray-800);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    /* ── HEADER ── */
+    header {
+      background: var(--navy);
+      color: white;
+      padding: 40px 56px 36px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .header-left h1 {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 28px;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+
+    .header-left .subtitle {
+      font-size: 14px;
+      color: var(--gray-300);
+      font-weight: 400;
+    }
+
+    .header-badge {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      padding: 10px 18px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .header-badge .label {
+      font-size: 11px;
+      color: var(--gray-300);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+    }
+
+    .header-badge .version {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      color: #fff;
+      margin-top: 2px;
+    }
+
+    /* ── LAYOUT ── */
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 40px 40px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    .grid-full {
+      margin-bottom: 20px;
+    }
+
+    /* ── CARDS ── */
+    .card {
+      background: #fff;
+      border: 1px solid var(--gray-100);
+      border-radius: 12px;
+      padding: 22px 24px;
+    }
+
+    .card-navy {
+      background: var(--navy);
+      border: none;
+      color: white;
+    }
+
+    .card-blue {
+      background: var(--blue-pale);
+      border: 1px solid #c9d8f0;
+    }
+
+    .card h2 {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--blue);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-navy h2 {
+      color: var(--blue-pale);
+    }
+
+    .card h3 {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--gray-800);
+      margin-bottom: 8px;
+    }
+
+    .card-navy h3 {
+      color: #fff;
+    }
+
+    /* ── STACK CHIPS ── */
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .chip {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11.5px;
+      font-weight: 500;
+      padding: 3px 10px;
+      border-radius: 6px;
+      background: var(--blue-pale);
+      color: var(--blue);
+      border: 1px solid #c9d8f0;
+    }
+
+    .chip-dark {
+      background: rgba(255,255,255,0.1);
+      color: var(--blue-pale);
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+
+    /* ── TOKEN FLOW ── */
+    .flow {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+
+    .flow-step {
+      background: var(--navy-mid);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--blue-pale);
+      text-align: center;
+      min-width: 110px;
+    }
+
+    .flow-step .step-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--blue-light);
+      font-weight: 600;
+      margin-bottom: 3px;
+    }
+
+    .flow-step .step-label {
+      font-weight: 600;
+      font-size: 11.5px;
+      color: #fff;
+    }
+
+    .flow-arrow {
+      width: 28px;
+      text-align: center;
+      color: var(--blue-light);
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    /* ── INTEGRATION TABLE ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    thead th {
+      text-align: left;
+      padding: 8px 12px;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--blue);
+      border-bottom: 2px solid var(--gray-100);
+    }
+
+    tbody tr:not(:last-child) td {
+      border-bottom: 1px solid var(--gray-100);
+    }
+
+    tbody td {
+      padding: 10px 12px;
+      vertical-align: top;
+      color: var(--gray-700);
+    }
+
+    tbody td:first-child {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--blue);
+      white-space: nowrap;
+    }
+
+    tbody td .desc {
+      font-size: 12px;
+      color: var(--gray-500);
+      margin-top: 2px;
+    }
+
+    /* ── ENV VARS ── */
+    .env-list {
+      margin-top: 10px;
+    }
+
+    .env-item {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      padding: 7px 0;
+      border-bottom: 1px solid var(--gray-100);
+    }
+
+    .env-item:last-child { border-bottom: none; }
+
+    .env-key {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--blue);
+      font-weight: 500;
+      min-width: 220px;
+      flex-shrink: 0;
+    }
+
+    .env-desc {
+      font-size: 12.5px;
+      color: var(--gray-500);
+    }
+
+    .env-required {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #fef2f2;
+      color: #dc2626;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    .env-optional {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--blue-pale);
+      color: var(--blue);
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    /* ── ROLES ── */
+    .role-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .role-card {
+      background: var(--off-white);
+      border: 1px solid var(--gray-100);
+      border-radius: 8px;
+      padding: 10px 14px;
+      flex: 1;
+      min-width: 120px;
+    }
+
+    .role-name {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--navy);
+      margin-bottom: 4px;
+    }
+
+    .role-desc {
+      font-size: 11.5px;
+      color: var(--gray-500);
+    }
+
+    /* ── ARCHITECTURE DIAGRAM ── */
+    .arch {
+      display: flex;
+      gap: 16px;
+      align-items: stretch;
+      margin-top: 14px;
+    }
+
+    .arch-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .arch-box {
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 12.5px;
+    }
+
+    .arch-label {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 10.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+
+    .arch-item {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11.5px;
+      padding: 3px 0;
+    }
+
+    .arch-divider {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      color: var(--gray-300);
+      font-size: 20px;
+      padding: 0 4px;
+    }
+
+    .arch-divider span {
+      font-size: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--gray-300);
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      letter-spacing: 0.05em;
+    }
+
+    /* ── CALLOUT ── */
+    .callout {
+      background: #fffbeb;
+      border: 1px solid #fcd34d;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: #92400e;
+      margin-top: 14px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .callout-icon { flex-shrink: 0; font-size: 16px; }
+
+    /* ── FOOTER ── */
+    footer {
+      background: var(--navy);
+      color: var(--gray-300);
+      text-align: center;
+      padding: 18px 40px;
+      font-size: 12px;
+      margin-top: 12px;
+    }
+
+    footer strong { color: #fff; }
+
+    @media print {
+      body { font-size: 12px; }
+      main { padding: 24px 32px; }
+      header { padding: 28px 40px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ════════════════ HEADER ════════════════ -->
+<header>
+  <div class="header-left">
+    <h1>TaperPay Backoffice Platform</h1>
+    <div class="subtitle">Developer &amp; Infrastructure Overview — Internal Documentation</div>
+  </div>
+  <div class="header-badge">
+    <div class="label">Stack</div>
+    <div class="version">FastAPI · React · PostgreSQL</div>
+    <div class="version" style="margin-top:4px; font-size:11px; color: var(--gray-300)">v1.0 · April 2026</div>
+  </div>
+</header>
+
+<main>
+
+  <!-- ════════ ROW 1: WHAT IS IT + STACK ════════ -->
+  <div class="grid-2">
+
+    <div class="card">
+      <h2>🏗 What Is This System</h2>
+      <h3>Internal CRM + Onboarding Platform</h3>
+      <p style="color: var(--gray-500); font-size:13px; margin-bottom:12px;">
+        The TaperPay Backoffice is a full-stack web application that supports the entire Taper commercial pipeline — from first lead contact through to active client management. It is designed to run on a private server and be maintained directly by Claude.
+      </p>
+      <p style="color: var(--gray-500); font-size:13px; margin-bottom:12px;">
+        The system manages leads, prospects, onboarding (KYC/AML), compliance email tickets, internal chat, document storage, callback scheduling, and sales analytics — all in one place.
+      </p>
+      <div class="callout">
+        <span class="callout-icon">⚠️</span>
+        <span>This is an <strong>internal-only</strong> system. It should not be publicly exposed. Run behind a VPN or IP allowlist in production.</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>⚙️ Tech Stack</h2>
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        <div>
+          <div style="font-size:12px; font-weight:600; color: var(--gray-700); margin-bottom:4px;">Backend</div>
+          <div class="chip-row">
+            <span class="chip">Python 3.11+</span>
+            <span class="chip">FastAPI</span>
+            <span class="chip">SQLAlchemy</span>
+            <span class="chip">PostgreSQL</span>
+            <span class="chip">httpx</span>
+            <span class="chip">Uvicorn</span>
+            <span class="chip">Anthropic SDK</span>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:12px; font-weight:600; color: var(--gray-700); margin-bottom:4px;">Frontend</div>
+          <div class="chip-row">
+            <span class="chip">React 18</span>
+            <span class="chip">Vite</span>
+            <span class="chip">Tailwind CSS</span>
+            <span class="chip">React Router</span>
+            <span class="chip">recharts</span>
+            <span class="chip">lucide-react</span>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:12px; font-weight:600; color: var(--gray-700); margin-bottom:4px;">External APIs</div>
+          <div class="chip-row">
+            <span class="chip">Gmail API</span>
+            <span class="chip">Google Calendar API</span>
+            <span class="chip">Google OAuth 2.0</span>
+            <span class="chip">Claude API</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ════════ ROW 2: GOOGLE TOKENS (main question) ════════ -->
+  <div class="grid-full">
+    <div class="card card-navy">
+      <h2>🔑 Google OAuth Tokens — What They Are &amp; Why We Need Them</h2>
+      <p style="color: var(--gray-300); font-size:13px; margin-bottom:16px;">
+        This is the most important integration to understand. We use Google OAuth 2.0 to let users connect their Google account once, after which the system can access Gmail and Google Calendar on their behalf — without ever storing their password.
+      </p>
+
+      <div class="arch">
+        <!-- Flow diagram -->
+        <div style="flex:1">
+          <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.07em; color: var(--blue-pale); margin-bottom:12px;">One-time OAuth login flow</div>
+          <div class="flow">
+            <div class="flow-step">
+              <div class="step-num">STEP 1</div>
+              <div class="step-label">User clicks<br/>"Connect Google"</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+              <div class="step-num">STEP 2</div>
+              <div class="step-label">Redirected to<br/>Google consent</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+              <div class="step-num">STEP 3</div>
+              <div class="step-label">Google returns<br/>auth code</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+              <div class="step-num">STEP 4</div>
+              <div class="step-label">Backend stores<br/>refresh token</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+              <div class="step-num">STEP 5</div>
+              <div class="step-label">Background jobs<br/>use token silently</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-top: 20px; gap: 12px;">
+        <div style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius:8px; padding: 14px 16px;">
+          <div style="font-size:11.5px; font-weight:700; color: var(--blue-pale); margin-bottom:8px;">ACCESS TOKEN</div>
+          <p style="font-size:12.5px; color: var(--gray-300);">Short-lived credential (1 hour). Used in the <code style="background:rgba(255,255,255,0.1); padding:1px 5px; border-radius:3px;">Authorization: Bearer …</code> header for every Gmail / Calendar API call. Automatically refreshed when expired — the user never notices.</p>
+        </div>
+        <div style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius:8px; padding: 14px 16px;">
+          <div style="font-size:11.5px; font-weight:700; color: var(--blue-pale); margin-bottom:8px;">REFRESH TOKEN</div>
+          <p style="font-size:12.5px; color: var(--gray-300);">Long-lived credential. Stored encrypted in the <code style="background:rgba(255,255,255,0.1); padding:1px 5px; border-radius:3px;">users.google_refresh_token</code> column. Used once per access token expiry to get a new access token from Google without requiring the user to log in again.</p>
+        </div>
+      </div>
+
+      <div style="margin-top: 16px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius:8px; padding: 14px 16px;">
+        <div style="font-size:11.5px; font-weight:700; color: var(--blue-pale); margin-bottom:8px;">WHAT SCOPES DO WE REQUEST?</div>
+        <div class="chip-row">
+          <span class="chip chip-dark">gmail.readonly</span>
+          <span class="chip chip-dark">gmail.send</span>
+          <span class="chip chip-dark">gmail.modify</span>
+          <span class="chip chip-dark">calendar.events</span>
+          <span class="chip chip-dark">userinfo.email</span>
+          <span class="chip chip-dark">userinfo.profile</span>
+        </div>
+        <p style="font-size:12px; color: var(--gray-300); margin-top:10px;">
+          These scopes allow the system to: read incoming emails for a lead, send compliance replies, create/delete calendar events for callbacks, and identify the authenticated user. No other Google data is accessed.
+        </p>
+      </div>
+
+      <div style="margin-top:14px; background: rgba(252,211,77,0.08); border: 1px solid rgba(252,211,77,0.3); border-radius:8px; padding:12px 16px; font-size:12.5px; color: #fef3c7;">
+        ⚠️ <strong>Compliance user note:</strong> The <code style="background:rgba(255,255,255,0.1); padding:1px 5px; border-radius:3px;">compliance@taperpay.com</code> account must complete this OAuth flow once in the system before automated email detection activates. The background Gmail sync uses all active users' tokens — meaning more connected accounts = wider email coverage.
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ ROW 3: ARCHITECTURE ════════ -->
+  <div class="grid-2">
+
+    <div class="card">
+      <h2>🗄 Data Architecture</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Table</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>users</td>
+            <td>Staff accounts, roles, Google OAuth tokens<div class="desc">google_refresh_token stored here</div></td>
+          </tr>
+          <tr>
+            <td>leads</td>
+            <td>Full pipeline from lead → prospect → client<div class="desc">pipeline_stage, revenue_potential, is_locked</div></td>
+          </tr>
+          <tr>
+            <td>email_syncs</td>
+            <td>Every synced Gmail message per lead<div class="desc">gmail_message_id, thread_id, body_html</div></td>
+          </tr>
+          <tr>
+            <td>compliance_cases</td>
+            <td>Compliance tickets linked to email threads<div class="desc">gmail_thread_id used as thread key</div></td>
+          </tr>
+          <tr>
+            <td>callbacks</td>
+            <td>Planned calls/meetings with Google Calendar sync<div class="desc">google_event_id, invited_user_ids</div></td>
+          </tr>
+          <tr>
+            <td>chat_channels / messages</td>
+            <td>Internal team chat, role-based system channels<div class="desc">Sales · Backoffice · Finance · Management</div></td>
+          </tr>
+          <tr>
+            <td>documents</td>
+            <td>KYC/onboarding file uploads with AI scan<div class="desc">Stored in /uploads, served via /static</div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>🔄 Background Jobs</h2>
+      <div style="display:flex; flex-direction:column; gap:10px; margin-top:4px;">
+
+        <div style="border:1px solid var(--gray-100); border-radius:8px; padding:12px 14px;">
+          <div style="font-size:13px; font-weight:600; color: var(--gray-800); margin-bottom:4px;">Gmail Auto-Sync</div>
+          <div style="font-size:12px; color: var(--gray-500); margin-bottom:6px;">Runs every <strong>30 minutes</strong>. Syncs Gmail for every active lead (Lead → Prospect → Client stages) using every connected user's token. New emails are automatically linked to compliance cases if a matching thread ID exists.</div>
+          <div class="chip-row">
+            <span class="chip">asyncio task</span>
+            <span class="chip">20 min timeout</span>
+            <span class="chip">token pool strategy</span>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--gray-100); border-radius:8px; padding:12px 14px;">
+          <div style="font-size:13px; font-weight:600; color: var(--gray-800); margin-bottom:4px;">System Channel Seeding</div>
+          <div style="font-size:12px; color: var(--gray-500); margin-bottom:6px;">Runs on every server startup. Creates and syncs role-based chat channels. Adds users with matching roles, removes users whose roles changed. Fully idempotent.</div>
+          <div class="chip-row">
+            <span class="chip">startup hook</span>
+            <span class="chip">idempotent</span>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--gray-100); border-radius:8px; padding:12px 14px;">
+          <div style="font-size:13px; font-weight:600; color: var(--gray-800); margin-bottom:4px;">DB Migrations</div>
+          <div style="font-size:12px; color: var(--gray-500); margin-bottom:6px;">Schema changes are applied as <code style="font-family:monospace; font-size:11px">ALTER TABLE … IF NOT EXISTS</code> statements on every startup. No separate migration tool — failures are caught, logged, and skipped individually.</div>
+          <div class="chip-row">
+            <span class="chip">startup hook</span>
+            <span class="chip">safe on conflict</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ ROW 4: ENV VARS ════════ -->
+  <div class="grid-full">
+    <div class="card">
+      <h2>🌍 Environment Variables</h2>
+      <p style="font-size:12.5px; color: var(--gray-500); margin-bottom:12px;">All configuration is loaded from a <code style="font-family:monospace">.env</code> file in the backend root. No secrets are hardcoded.</p>
+      <div class="env-list">
+        <div class="env-item">
+          <span class="env-key">DATABASE_URL</span>
+          <span class="env-desc">PostgreSQL connection string. Format: <code style="font-family:monospace; font-size:11px">postgresql://user:pass@host:5432/dbname</code></span>
+          <span class="env-required">REQUIRED</span>
+        </div>
+        <div class="env-item">
+          <span class="env-key">SECRET_KEY</span>
+          <span class="env-desc">JWT signing key. Generate with <code style="font-family:monospace; font-size:11px">openssl rand -hex 32</code>. Rotate to invalidate all active sessions.</span>
+          <span class="env-required">REQUIRED</span>
+        </div>
+        <div class="env-item">
+          <span class="env-key">GOOGLE_CLIENT_ID</span>
+          <span class="env-desc">OAuth 2.0 Client ID from Google Cloud Console. Used for all Gmail + Calendar API calls.</span>
+          <span class="env-required">REQUIRED</span>
+        </div>
+        <div class="env-item">
+          <span class="env-key">GOOGLE_CLIENT_SECRET</span>
+          <span class="env-desc">OAuth 2.0 Client Secret. Paired with GOOGLE_CLIENT_ID. Store securely — never commit to git.</span>
+          <span class="env-required">REQUIRED</span>
+        </div>
+        <div class="env-item">
+          <span class="env-key">GOOGLE_REDIRECT_URI</span>
+          <span class="env-desc">Must match exactly what is registered in Google Cloud Console. E.g. <code style="font-family:monospace; font-size:11px">https://app.taperpay.com/api/v1/auth/google/callback</code></span>
+          <span class="env-required">REQUIRED</span>
+        </div>
+        <div class="env-item">
+          <span class="env-key">ANTHROPIC_API_KEY</span>
+          <span class="env-desc">API key for Claude AI features (call transcript summaries, document scanning, AI assistant).</span>
+          <span class="env-required">REQUIRED</span>
+        </div>
+        <div class="env-item">
+          <span class="env-key">FRONTEND_URL</span>
+          <span class="env-desc">Frontend origin for CORS. E.g. <code style="font-family:monospace; font-size:11px">https://app.taperpay.com</code> — used in CORS middleware.</span>
+          <span class="env-required">REQUIRED</span>
+        </div>
+        <div class="env-item">
+          <span class="env-key">UPLOAD_DIR</span>
+          <span class="env-desc">Filesystem path for document uploads. Default: <code style="font-family:monospace; font-size:11px">./uploads</code>. Use a persistent volume in production.</span>
+          <span class="env-optional">OPTIONAL</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ ROW 5: ROLES + ROUTING ════════ -->
+  <div class="grid-2">
+
+    <div class="card">
+      <h2>👥 User Roles &amp; Access</h2>
+      <p style="font-size:12.5px; color: var(--gray-500); margin-bottom:12px;">Roles are enforced in the backend via middleware. The frontend adapts the UI based on the JWT payload.</p>
+      <div class="role-row">
+        <div class="role-card">
+          <div class="role-name">sales</div>
+          <div class="role-desc">Leads, prospects, callbacks, bellijst</div>
+        </div>
+        <div class="role-card">
+          <div class="role-name">backoffice</div>
+          <div class="role-desc">Onboarding, KYC docs, client data</div>
+        </div>
+        <div class="role-card">
+          <div class="role-name">finance</div>
+          <div class="role-desc">Pricing, trade finance, reporting</div>
+        </div>
+      </div>
+      <div class="role-row" style="margin-top:8px;">
+        <div class="role-card">
+          <div class="role-name">teamleader</div>
+          <div class="role-desc">Sales dashboard, team mgmt, forecast</div>
+        </div>
+        <div class="role-card">
+          <div class="role-name">admin_pay</div>
+          <div class="role-desc">Full access — TaperPay admin</div>
+        </div>
+        <div class="role-card">
+          <div class="role-name">admin_trade</div>
+          <div class="role-desc">Full access — TaperTrade admin</div>
+        </div>
+      </div>
+      <div style="margin-top:14px; padding:10px 12px; background: var(--off-white); border-radius:8px; font-size:12px; color: var(--gray-500);">
+        🔐 <strong>JWT auth</strong> — tokens issued on login, passed as <code style="font-family:monospace">Authorization: Bearer &lt;token&gt;</code>. Stored in <code style="font-family:monospace">sessionStorage</code> on the client.
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🛣 API Route Overview</h2>
+      <table>
+        <thead>
+          <tr><th>Prefix</th><th>Module</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>/api/v1/auth</td><td>Login, Google OAuth, token refresh</td></tr>
+          <tr><td>/api/v1/users</td><td>User management, avatar upload</td></tr>
+          <tr><td>/api/v1/leads</td><td>Lead CRUD, pipeline, Gmail sync, conversations</td></tr>
+          <tr><td>/api/v1/prospects</td><td>KYC data, pricing, risk profile</td></tr>
+          <tr><td>/api/v1/callbacks</td><td>Schedule, complete, Google Calendar push</td></tr>
+          <tr><td>/api/v1/compliance</td><td>Email proposals, cases, thread, reply</td></tr>
+          <tr><td>/api/v1/chat</td><td>Channels, messages, WebSocket real-time</td></tr>
+          <tr><td>/api/v1/documents</td><td>Upload, download, AI scan</td></tr>
+          <tr><td>/api/v1/dashboard</td><td>Stats, pipeline counts, scoring</td></tr>
+          <tr><td>/api/v1/admin</td><td>User admin, scoring config</td></tr>
+          <tr><td>/api/health</td><td>Health check — no auth required</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- ════════ ROW 6: DEPLOY ════════ -->
+  <div class="grid-full">
+    <div class="card card-blue">
+      <h2>🚀 Running the Platform</h2>
+      <div class="grid-2" style="margin-top: 4px; gap: 20px;">
+        <div>
+          <div style="font-size:12px; font-weight:700; color: var(--navy); margin-bottom:8px;">Backend (FastAPI)</div>
+          <div style="background: var(--navy); border-radius:8px; padding:14px 16px; font-family:'JetBrains Mono', monospace; font-size:12px; color: var(--blue-pale); line-height:2;">
+            <span style="color: var(--gray-300)"># Install dependencies</span><br/>
+            pip install -r requirements.txt<br/>
+            <span style="color: var(--gray-300)"># Copy and fill in .env</span><br/>
+            cp .env.example .env<br/>
+            <span style="color: var(--gray-300)"># Start server (auto-migrates on boot)</span><br/>
+            uvicorn app.main:app --host 0.0.0.0 --port 8000
+          </div>
+        </div>
+        <div>
+          <div style="font-size:12px; font-weight:700; color: var(--navy); margin-bottom:8px;">Frontend (React + Vite)</div>
+          <div style="background: var(--navy); border-radius:8px; padding:14px 16px; font-family:'JetBrains Mono', monospace; font-size:12px; color: var(--blue-pale); line-height:2;">
+            <span style="color: var(--gray-300)"># Install dependencies</span><br/>
+            npm install<br/>
+            <span style="color: var(--gray-300)"># Development server</span><br/>
+            npm run dev<br/>
+            <span style="color: var(--gray-300)"># Production build</span><br/>
+            npm run build
+          </div>
+          <div style="margin-top:10px; font-size:12px; color: var(--gray-500);">
+            In production, serve the <code style="font-family:monospace">dist/</code> folder via Nginx or Caddy. Proxy <code style="font-family:monospace">/api/*</code> to the FastAPI backend on port 8000.
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:16px; background: rgba(1,23,69,0.06); border:1px solid rgba(1,23,69,0.12); border-radius:8px; padding:12px 16px; font-size:12.5px; color: var(--navy-mid);">
+        💡 <strong>Google Cloud Console setup required:</strong> Create an OAuth 2.0 Web Application credential. Add your domain to Authorised Origins and your callback URL to Authorised Redirect URIs. Enable the Gmail API and Google Calendar API for the project. The OAuth consent screen must be set to <em>Internal</em> (Google Workspace) or submitted for verification if using external accounts.
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  <strong>TaperPay Backoffice</strong> · Internal Developer Documentation · Confidential · Do not distribute externally<br/>
+  <span style="margin-top:4px; display:block;">Questions? Contact the platform owner or open an issue in the system admin panel.</span>
+</footer>
+
+</body>
+</html>

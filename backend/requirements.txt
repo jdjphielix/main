@@ -1,0 +1,49 @@
+# FastAPI & Server
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.18
+
+# Database
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.10
+alembic==1.14.0
+
+# Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+authlib==1.4.0
+httpx==0.28.1
+itsdangerous==2.2.0
+
+# AI
+anthropic==0.40.0
+
+# File processing
+openpyxl==3.1.5
+python-pptx==1.0.2
+Pillow==11.0.0
+pypdf2==3.0.1
+PyMuPDF==1.25.3
+
+# WebSocket
+websockets==14.1
+
+# Utils
+python-dotenv==1.0.1
+pydantic[email]==2.10.3
+pydantic-settings==2.7.0
+aiofiles==24.1.0
+
+# Google API
+google-auth==2.37.0
+google-auth-oauthlib==1.2.1
+google-api-python-client==2.159.0
+
+# Web scraping (lead enrichment)
+beautifulsoup4==4.12.3
+
+# Scheduler (background email sync)
+apscheduler==3.10.4
+
+# CORS
+starlette==0.41.3
