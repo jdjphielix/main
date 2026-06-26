@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  MessageSquare, Plus, Send, Hash, Users, Loader2, Search,
-  X, Smile, Paperclip, AtSign, ChevronDown, AlertCircle, Lock
+  MessageSquare, Plus, Send, Hash, Users, User, Loader2, Search,
+  X, Smile, Paperclip, AtSign, ChevronDown, AlertCircle, Lock, Calendar
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -145,16 +145,16 @@ export default function ChatPage() {
     }
   }
 
-  // Load team users when opening new channel form
-  async function openNewChannelForm() {
-    openNewChannelForm();
-    setSelectedMembers([]);
-    setMemberSearch('');
-    try {
-      const data = await api('/api/v1/users/team');
-      setTeamUsers((data || []).filter(u => u.status !== 'inactive'));
-    } catch {}
-  }
+  // Load team users when the new channel form opens
+  React.useEffect(() => {
+    if (showNewChannel) {
+      setSelectedMembers([]);
+      setMemberSearch('');
+      api('/api/v1/users/team').then(data => {
+        setTeamUsers((data || []).filter(u => u.status !== 'inactive'));
+      }).catch(() => {});
+    }
+  }, [showNewChannel]);
 
   // Create channel
   async function handleCreateChannel() {

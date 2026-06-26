@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { User, Mail, Shield, Clock, Save, Loader2, Camera } from 'lucide-react';
+import { User, Mail, Shield, Clock, Save, Loader2, Camera, Calendar, CheckCircle, ExternalLink } from 'lucide-react';
 
 const API = '/api/v1';
 const token = () => sessionStorage.getItem('auth_token');
@@ -239,6 +239,43 @@ export default function ProfilePage() {
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
             {saving ? 'Opslaan...' : 'Opslaan'}
           </button>
+        </div>
+      </div>
+
+      {/* Google integraties */}
+      <div className="mt-6 rounded-xl border p-6" style={{ backgroundColor: '#fff', borderColor: '#e8eaf2' }}>
+        <h3 className="text-sm font-semibold mb-4" style={{ color: '#3b4560' }}>Google Integraties</h3>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#eef2fa' }}>
+              <Calendar size={18} style={{ color: '#3d61a4' }} />
+            </div>
+            <div>
+              <p className="text-sm font-medium" style={{ color: '#011745' }}>Google Calendar</p>
+              <p className="text-xs mt-0.5" style={{ color: '#7b859e' }}>
+                Synchroniseer callbacks automatisch met je Google Calendar en ontvang uitnodigingen
+              </p>
+              {user?.google_id ? (
+                <div className="flex items-center gap-1.5 mt-1.5">
+                  <CheckCircle size={12} style={{ color: '#16a34a' }} />
+                  <span className="text-xs font-medium" style={{ color: '#16a34a' }}>Google account gekoppeld</span>
+                </div>
+              ) : (
+                <p className="text-xs mt-1.5" style={{ color: '#a4abbe' }}>Nog niet gekoppeld</p>
+              )}
+            </div>
+          </div>
+          <a
+            href="/api/v1/auth/google/login"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex-shrink-0"
+            style={{
+              backgroundColor: user?.google_id ? '#f3f4f8' : '#3d61a4',
+              color: user?.google_id ? '#566079' : '#fff',
+            }}
+          >
+            <ExternalLink size={14} />
+            {user?.google_id ? 'Opnieuw koppelen' : 'Koppelen'}
+          </a>
         </div>
       </div>
 
