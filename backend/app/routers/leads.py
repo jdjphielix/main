@@ -291,6 +291,11 @@ async def create_lead(
     db.commit()
     db.refresh(lead)
 
+    # Auto-lock new lead for creator so it appears in "Mijn Leads"
+    lead.is_locked = True
+    lead.locked_by_user_id = current_user.id
+    db.commit()
+
     # Activity log
     db.add(ActivityLog(
         user_id=current_user.id,

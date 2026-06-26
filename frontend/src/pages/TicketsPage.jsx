@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Ticket, AlertCircle, Clock, CheckCircle, XCircle, Filter, RefreshCw } from 'lucide-react';
+import { Plus, Ticket, AlertCircle, Clock, CheckCircle, XCircle, Filter, RefreshCw, Trash2, Edit3, X, Users } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const token = () => sessionStorage.getItem('auth_token');
@@ -8,12 +8,20 @@ const api = (url, opts = {}) => fetch(url, {
   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}`, ...(opts.headers || {}) },
 }).then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)));
 
-const STATUSES = { open: { label: 'Open', color: '#3d61a4', bg: '#eef2fa', icon: Clock },
-  in_progress: { label: 'In behandeling', color: '#d97706', bg: '#fffbeb', icon: AlertCircle },
-  resolved: { label: 'Opgelost', color: '#16a34a', bg: '#f0fdf4', icon: CheckCircle },
-  closed: { label: 'Gesloten', color: '#7b859e', bg: '#f3f4f8', icon: XCircle } };
-const PRIORITIES = { low: { label: 'Laag', color: '#7b859e' }, normal: { label: 'Normaal', color: '#3d61a4' },
-  high: { label: 'Hoog', color: '#d97706' }, urgent: { label: 'Urgent', color: '#dc2626' } };
+const STATUSES = {
+  open:        { label: 'Open',           color: '#3d61a4', bg: '#eef2fa',  icon: Clock },
+  in_progress: { label: 'In behandeling', color: '#d97706', bg: '#fffbeb',  icon: AlertCircle },
+  waiting:     { label: 'Wachten',        color: '#7c3aed', bg: '#f5f3ff',  icon: Clock },
+  with_broker: { label: 'Met broker',     color: '#0891b2', bg: '#ecfeff',  icon: AlertCircle },
+  resolved:    { label: 'Opgelost',       color: '#16a34a', bg: '#f0fdf4',  icon: CheckCircle },
+  closed:      { label: 'Gesloten',       color: '#7b859e', bg: '#f3f4f8',  icon: XCircle },
+};
+const PRIORITIES = {
+  low:    { label: 'Laag',    color: '#7b859e' },
+  normal: { label: 'Normaal', color: '#3d61a4' },
+  high:   { label: 'Hoog',    color: '#d97706' },
+  urgent: { label: 'Urgent',  color: '#dc2626' },
+};
 const CATEGORIES = ['onboarding', 'client', 'fx', 'trade', 'compliance', 'other'];
 
 export default function TicketsPage() {
@@ -23,7 +31,8 @@ export default function TicketsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [filterStatus, setFilterStatus] = useState('');
   const [filterMine, setFilterMine] = useState(false);
-  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [editingTicket, setEditingTicket] = useState(null);
+  const [editForm, setEditForm] = useState({});
   const [allUsers, setAllUsers] = useState([]);
   const [form, setForm] = useState({ title: '', description: '', priority: 'normal', category: 'other', assigned_to_id: '' });
   const [saving, setSaving] = useState(false);
@@ -68,8 +77,44 @@ export default function TicketsPage() {
     try {
       const updated = await api(`/api/v1/tickets/${id}`, { method: 'PUT', body: JSON.stringify(data) });
       setTickets(prev => prev.map(t => t.id === id ? { ...t, ...updated } : t));
-      if (selectedTicket?.id === id) setSelectedTicket(prev => ({ ...prev, ...updated }));
+      return updated;
     } catch (e) { alert('Bijwerken mislukt: ' + e.message); }
+  };
+
+  const deleteTicket = async (id) => {
+    if (!window.confirm('Ticket definitief verwijderen?')) return;
+    try {
+      await api(`/api/v1/tickets/${id}`, { method: 'DELETE' });
+      setTickets(prev => prev.filter(t => t.id !== id));
+      setEditingTicket(null);
+    } catch (e) { alert('Verwijderen mislukt: ' + e.message); }
+  };
+
+  const openEdit = (ticket) => {
+    setEditingTicket(ticket);
+    setEditForm({
+      title: ticket.title || '',
+      description: ticket.description || '',
+      status: ticket.status || 'open',
+      priority: ticket.priority || 'normal',
+      category: ticket.category || 'other',
+      assigned_to_id: ticket.assigned_to_id || '',
+    });
+  };
+
+  const saveEdit = async () => {
+    setSaving(true);
+    try {
+      const updated = await updateTicket(editingTicket.id, {
+        ...editForm,
+        assigned_to_id: editForm.assigned_to_id || null,
+      });
+      if (updated) {
+        setEditingTicket(prev => ({ ...prev, ...updated }));
+      }
+      setEditingTicket(null);
+    } catch (e) { /* handled in updateTicket */ }
+    finally { setSaving(false); }
   };
 
   const statusCounts = Object.keys(STATUSES).reduce((acc, s) => {
@@ -97,19 +142,19 @@ export default function TicketsPage() {
         </div>
       </div>
 
-      {/* Status summary */}
-      <div className="grid grid-cols-4 gap-3">
+      {/* Status summary — 3 columns, 2 rows */}
+      <div className="grid grid-cols-3 gap-3">
         {Object.entries(STATUSES).map(([key, s]) => {
           const Icon = s.icon;
           return (
             <button key={key} onClick={() => setFilterStatus(filterStatus === key ? '' : key)}
-              className={`p-4 rounded-xl border text-left transition-all ${filterStatus === key ? 'border-2' : 'border-[#e8eaf2]'}`}
+              className={`p-3 rounded-xl border text-left transition-all ${filterStatus === key ? 'border-2' : 'border-[#e8eaf2]'}`}
               style={{ backgroundColor: filterStatus === key ? s.bg : 'white', borderColor: filterStatus === key ? s.color : '#e8eaf2' }}>
-              <div className="flex items-center gap-2 mb-1">
-                <Icon size={14} style={{ color: s.color }} />
+              <div className="flex items-center gap-2 mb-0.5">
+                <Icon size={12} style={{ color: s.color }} />
                 <span className="text-xs font-medium" style={{ color: s.color }}>{s.label}</span>
               </div>
-              <p className="text-2xl font-bold" style={{ color: '#011745' }}>{statusCounts[key] || 0}</p>
+              <p className="text-xl font-bold" style={{ color: '#011745' }}>{statusCounts[key] || 0}</p>
             </button>
           );
         })}
@@ -147,11 +192,12 @@ export default function TicketsPage() {
               const s = STATUSES[ticket.status] || STATUSES.open;
               const p = PRIORITIES[ticket.priority] || PRIORITIES.normal;
               const SIcon = s.icon;
+              const canEdit = isAdmin || ticket.created_by_id === user?.id;
               return (
-                <div key={ticket.id} onClick={() => setSelectedTicket(ticket)}
-                  className="bg-white rounded-xl border border-[#e8eaf2] p-4 cursor-pointer hover:border-[#3d61a4] hover:shadow-sm transition-all">
+                <div key={ticket.id}
+                  className="bg-white rounded-xl border border-[#e8eaf2] p-4 hover:border-[#3d61a4] hover:shadow-sm transition-all">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => canEdit && openEdit(ticket)}>
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs font-bold" style={{ color: '#a4abbe' }}>#{ticket.id}</span>
                         <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: s.bg, color: s.color }}>
@@ -178,7 +224,8 @@ export default function TicketsPage() {
                         </span>
                       </div>
                     </div>
-                    {isAdmin && (
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {/* Quick status change */}
                       <select onClick={e => e.stopPropagation()}
                         value={ticket.status}
                         onChange={e => updateTicket(ticket.id, { status: e.target.value })}
@@ -186,7 +233,13 @@ export default function TicketsPage() {
                         style={{ color: s.color, backgroundColor: s.bg }}>
                         {Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                       </select>
-                    )}
+                      {canEdit && (
+                        <button onClick={e => { e.stopPropagation(); openEdit(ticket); }}
+                          className="p-1.5 rounded-lg hover:bg-[#eef2fa] transition-colors" title="Bewerken">
+                          <Edit3 size={14} style={{ color: '#3d61a4' }} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -195,7 +248,85 @@ export default function TicketsPage() {
         )}
       </div>
 
-      {/* Create ticket modal */}
+      {/* ─── EDIT MODAL ─── */}
+      {editingTicket && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl flex flex-col max-h-[90vh]">
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#e8eaf2]">
+              <h2 className="text-base font-bold" style={{ color: '#011745' }}>
+                Ticket #{editingTicket.id} bewerken
+              </h2>
+              <button onClick={() => setEditingTicket(null)}
+                className="p-1.5 rounded-lg hover:bg-[#f3f4f8]">
+                <X size={18} style={{ color: '#7b859e' }} />
+              </button>
+            </div>
+            {/* Modal body */}
+            <div className="p-6 space-y-4 overflow-y-auto">
+              <div>
+                <label className="text-xs font-semibold mb-1 block" style={{ color: '#566079' }}>Titel *</label>
+                <input value={editForm.title} onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))}
+                  className="w-full border border-[#e8eaf2] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d61a4]" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold mb-1 block" style={{ color: '#566079' }}>Beschrijving</label>
+                <textarea value={editForm.description} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))}
+                  rows={3} className="w-full border border-[#e8eaf2] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d61a4] resize-none" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold mb-1 block" style={{ color: '#566079' }}>Status</label>
+                  <select value={editForm.status} onChange={e => setEditForm(p => ({ ...p, status: e.target.value }))}
+                    className="w-full border border-[#e8eaf2] rounded-lg px-3 py-2 text-sm focus:outline-none">
+                    {Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold mb-1 block" style={{ color: '#566079' }}>Prioriteit</label>
+                  <select value={editForm.priority} onChange={e => setEditForm(p => ({ ...p, priority: e.target.value }))}
+                    className="w-full border border-[#e8eaf2] rounded-lg px-3 py-2 text-sm focus:outline-none">
+                    {Object.entries(PRIORITIES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold mb-1 block" style={{ color: '#566079' }}>Categorie</label>
+                <select value={editForm.category} onChange={e => setEditForm(p => ({ ...p, category: e.target.value }))}
+                  className="w-full border border-[#e8eaf2] rounded-lg px-3 py-2 text-sm focus:outline-none">
+                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              {isAdmin && allUsers.length > 0 && (
+                <div>
+                  <label className="text-xs font-semibold mb-1 block" style={{ color: '#566079' }}>Toegewezen aan</label>
+                  <select value={editForm.assigned_to_id} onChange={e => setEditForm(p => ({ ...p, assigned_to_id: e.target.value }))}
+                    className="w-full border border-[#e8eaf2] rounded-lg px-3 py-2 text-sm focus:outline-none">
+                    <option value=''>Niet toegewezen</option>
+                    {allUsers.map(u => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+            {/* Modal footer */}
+            <div className="flex items-center justify-between px-6 py-4 border-t border-[#e8eaf2]">
+              <button onClick={() => deleteTicket(editingTicket.id)}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 transition-colors">
+                <Trash2 size={14} /> Verwijderen
+              </button>
+              <div className="flex gap-2">
+                <button onClick={() => setEditingTicket(null)}
+                  className="px-4 py-2 rounded-lg text-sm border border-[#e8eaf2]">Annuleren</button>
+                <button onClick={saveEdit} disabled={saving || !editForm.title?.trim()}
+                  className="px-4 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50"
+                  style={{ backgroundColor: '#3d61a4' }}>{saving ? 'Opslaan...' : 'Opslaan'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── CREATE MODAL ─── */}
       {showCreate && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-xl">

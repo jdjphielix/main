@@ -7,7 +7,7 @@ export const ROLE_PERMISSIONS = {
   '/clients':          ['admin_pay','admin_trade','accountmanager'],
   '/sales-clients':    ['admin_pay','admin_trade','sales','extern'],
   '/chat':             ['admin_pay','admin_trade','sales','backoffice','finance','extern','accountmanager'],
-  '/tickets':          ['admin_pay','admin_trade','sales','backoffice','finance','extern','accountmanager'],
+  '/tickets':          ['admin_pay','admin_trade','backoffice','finance','accountmanager'],
   '/sales-dashboard':  ['admin_pay','admin_trade','sales'],
   '/team-management':  ['admin_pay','admin_trade'],
   '/team-onboarding':  ['admin_pay','admin_trade'],

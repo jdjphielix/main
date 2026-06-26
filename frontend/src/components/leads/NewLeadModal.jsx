@@ -201,7 +201,7 @@ const NewLeadModal = ({ isOpen, onClose, onLeadCreated }) => {
             company_industry: data.industry || prev.company_industry,
             kvk_number: data.kvk_number || prev.kvk_number,
             contact_phone: data.phone || prev.contact_phone,
-            contact_email: (data.contact_emails && data.contact_emails[0]) || prev.contact_email,
+            contact_email: (data.contact_emails && data.contact_emails.find(e => e && e.includes('@'))) || prev.contact_email,
           }));
         }
       } catch (err) {

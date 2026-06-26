@@ -648,6 +648,17 @@ export default function ClientsPage({ myClientsOnly = false }) {
         }
         setComplianceUploading(false);
       }
+      // Also create a linked ticket in the ticket system so it shows up in /tickets
+      await api(`/api/v1/tickets/`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: complianceForm.title,
+          description: complianceForm.description || '',
+          priority: complianceForm.priority || 'normal',
+          category: 'compliance',
+          related_lead_id: selectedClient.id,
+        }),
+      });
       const res = await fetch(`/api/v1/leads/${selectedClient.id}/compliance`, { headers: { Authorization: `Bearer ${token()}` } });
       if (res.ok) setComplianceCases(await res.json());
       setShowAddCompliance(false);

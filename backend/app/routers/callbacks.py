@@ -42,10 +42,9 @@ async def list_callbacks(
         Callback.is_completed == False,
     )
 
-    # If any internal_attendees or created_by, include
+    # Only show callbacks created by this user
     query = query.filter(
-        (Callback.created_by_id == user_filter_id) |
-        (Callback.internal_attendees.isnot(None))
+        Callback.created_by_id == user_filter_id
     )
 
     if today_only:

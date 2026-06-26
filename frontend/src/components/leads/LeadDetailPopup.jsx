@@ -1406,10 +1406,10 @@ export default function LeadDetailPopup({ lead, onClose, onUpdate }) {
                               className="w-full px-2 py-1.5 rounded-lg border border-[#cdd1e0] text-xs focus:outline-none bg-white">
                               {TF_PRODUCTS.map(p => <option key={p} value={p}>{p}</option>)}
                             </select>
-                            <input type="number" value={row.bedrag} onChange={e => updateTfRow(row.id, 'bedrag', e.target.value)}
+                            <input type="number" value={row.bedrag} onChange={e => updateTfRow(row.id, 'bedrag', e.target.value)} onBlur={() => saveTfRows(tfRows)}
                               placeholder="0" min="0" className="w-full px-2 py-1.5 rounded-lg border border-[#cdd1e0] text-xs focus:outline-none bg-white" />
                             <div className="relative">
-                              <input type="number" value={row.percentage} onChange={e => updateTfRow(row.id, 'percentage', e.target.value)}
+                              <input type="number" value={row.percentage} onChange={e => updateTfRow(row.id, 'percentage', e.target.value)} onBlur={() => saveTfRows(tfRows)}
                                 placeholder="1.5" step="0.1" min="0" className="w-full pl-2 pr-5 py-1.5 rounded-lg border border-[#cdd1e0] text-xs focus:outline-none bg-white" />
                               <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[#a4abbe]">%</span>
                             </div>

@@ -1962,6 +1962,8 @@ export default function OnboardingPage() {
                           ? boStatus === 'approved' ? 'bg-[#f0fdf4] border-[#bbf7d0]'
                             : boStatus === 'rejected' ? 'bg-red-50 border-red-200'
                             : 'bg-white border-[#e8eaf2]'
+                          : boStatus === 'approved' ? 'bg-[#f0fdf4] border-[#bbf7d0]'
+                          : boStatus === 'rejected' ? 'bg-red-50 border-red-200'
                           : checked ? 'bg-[#f0fdf4] border-[#bbf7d0]' : 'bg-white border-[#e8eaf2]';
 
                         return (
@@ -2004,21 +2006,26 @@ export default function OnboardingPage() {
                                   }`}>
                                     {req.product_type === 'taperpay' ? 'Pay' : 'Trade'}
                                   </span>
-                                  {/* BO status badge */}
-                                  {isBO && boStatus === 'approved' && (
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-green-100 text-green-700">GOED</span>
+                                  {/* BO status badge — visible to all users */}
+                                  {boStatus === 'approved' && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-green-100 text-green-700">BO: OK</span>
                                   )}
-                                  {isBO && boStatus === 'rejected' && (
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-red-100 text-red-700">AFGEKEURD</span>
+                                  {boStatus === 'rejected' && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-red-100 text-red-700">BO: AFGEKEURD</span>
                                   )}
                                 </div>
                                 {req.description && (
                                   <p className="text-xs mt-0.5" style={{ color: '#a4abbe' }}>{req.description}</p>
                                 )}
-                                {/* Show rejection note in sales view */}
+                                {/* Show BO feedback in sales view */}
                                 {!isBO && boStatus === 'rejected' && boNote && (
+                                  <p className="text-xs mt-1 px-2 py-1 rounded bg-red-50 text-red-600 flex items-start gap-1">
+                                    <span className="font-semibold flex-shrink-0">Backoffice:</span> {boNote}
+                                  </p>
+                                )}
+                                {!isBO && boStatus === 'rejected' && !boNote && (
                                   <p className="text-xs mt-1 px-2 py-1 rounded bg-red-50 text-red-600">
-                                    Backoffice: {boNote}
+                                    Afgekeurd door backoffice
                                   </p>
                                 )}
                               </div>

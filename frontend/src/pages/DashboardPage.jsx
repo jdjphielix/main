@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   TrendingUp, Users, PhoneCall, Award, DollarSign, BarChart2,
   Flame, Clock, ChevronRight, X, RefreshCw, Activity,
-  UserCheck, Star, Calendar
+  UserCheck, Star, Calendar, Edit2, Trash2
 } from 'lucide-react';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -369,30 +369,136 @@ function RevenuePipeline({ data }) {
 
 // ─── Today Panel ──────────────────────────────────────────────────────────
 
-function TodayPanel({ callbacks, dailyList, navigate }) {
+function TodayPanel({ callbacks, dailyList, navigate, onCallbacksChange }) {
+  const [editCb, setEditCb] = useState(null);  // callback being edited
+  const [editDate, setEditDate] = useState('');
+  const [editNote, setEditNote] = useState('');
+  const [saving, setSaving] = useState(false);
+
   const items = useMemo(() => {
     const cb = (callbacks || []).map((c) => ({ ...c, _type: 'callback' }));
     const dl = (dailyList || []).map((d) => ({ ...d, _type: 'daily' }));
     return [...cb, ...dl].slice(0, 12);
   }, [callbacks, dailyList]);
 
+  const openEdit = (item) => {
+    setEditCb(item);
+    const dt = item.scheduled_at ? new Date(item.scheduled_at) : new Date();
+    const local = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setEditDate(local);
+    setEditNote(item.internal_note || '');
+  };
+
+  const handleSave = async () => {
+    if (!editCb) return;
+    setSaving(true);
+    try {
+      await fetch(`/api/v1/callbacks/${editCb.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN()}` },
+        body: JSON.stringify({ scheduled_at: new Date(editDate).toISOString(), internal_note: editNote }),
+      });
+      setEditCb(null);
+      if (onCallbacksChange) onCallbacksChange();
+    } catch(e) { console.error(e); }
+    setSaving(false);
+  };
+
+  const handleDelete = async (item) => {
+    if (!window.confirm('Callback verwijderen?')) return;
+    try {
+      await fetch(`/api/v1/callbacks/${item.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${TOKEN()}` },
+      });
+      if (onCallbacksChange) onCallbacksChange();
+    } catch(e) { console.error(e); }
+  };
+
+  const handleNavigate = (item) => {
+    if (item.lead_id) {
+      navigate('/prospects');
+    } else {
+      navigate('/leads');
+    }
+  };
+
   if (!items.length) return <div style={S.empty}>Niets gepland voor vandaag</div>;
   return (
     <div>
-      {items.map((item, i) => (
-        <div key={i} style={S.todayItem} onClick={() => navigate('/prospects')}>
-          {item._type === 'callback'
-            ? <PhoneCall size={13} color="#3d61a4" />
-            : <Calendar size={13} color="#5a7fc2" />}
-          <div style={S.todayInfo}>
-            <span style={S.todayName}>{item.company_name || item.name || 'Prospect'}</span>
-            {item.callback_time && (
-              <span style={S.todayTime}>
-                <Clock size={10} style={{ marginRight: 2 }} />{item.callback_time}
-              </span>
+      {editCb && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setEditCb(null)}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 24, width: 360, boxShadow: '0 8px 32px rgba(1,23,69,0.2)' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <span style={{ fontWeight: 700, color: '#011745', fontSize: 15 }}>Callback bewerken</span>
+              <button onClick={() => setEditCb(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={18} color="#7b859e" /></button>
+            </div>
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#7b859e', marginBottom: 4 }}>Bedrijf</div>
+              <div style={{ fontWeight: 600, color: '#011745' }}>{editCb.lead?.company_name || editCb.company_name || '—'}</div>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#7b859e', display: 'block', marginBottom: 4 }}>Datum & tijd</label>
+              <input type="datetime-local" value={editDate} onChange={e => setEditDate(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #cdd1e0', fontSize: 13, outline: 'none' }} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#7b859e', display: 'block', marginBottom: 4 }}>Notitie</label>
+              <input value={editNote} onChange={e => setEditNote(e.target.value)} placeholder="Interne notitie..."
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #cdd1e0', fontSize: 13, outline: 'none' }} />
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={handleSave} disabled={saving}
+                style={{ flex: 1, background: '#3d61a4', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 0', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+                {saving ? 'Opslaan...' : 'Opslaan'}
+              </button>
+              <button onClick={() => handleDelete(editCb)}
+                style={{ background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: 8, padding: '9px 14px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+                Verwijder
+              </button>
+            </div>
+            {editCb.lead_id && (
+              <button onClick={() => { setEditCb(null); navigate('/prospects'); }}
+                style={{ marginTop: 10, width: '100%', background: '#eef2fa', color: '#3d61a4', border: 'none', borderRadius: 8, padding: '8px 0', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
+                → Ga naar prospect
+              </button>
             )}
           </div>
-          <ChevronRight size={12} color="#cdd1e0" />
+        </div>
+      )}
+      {items.map((item, i) => (
+        <div key={i} style={{ ...S.todayItem, position: 'relative' }}>
+          <div onClick={() => item._type === 'callback' ? openEdit(item) : handleNavigate(item)}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, cursor: 'pointer' }}>
+            {item._type === 'callback'
+              ? <PhoneCall size={13} color="#3d61a4" />
+              : <Calendar size={13} color="#5a7fc2" />}
+            <div style={S.todayInfo}>
+              <span style={{ ...S.todayName, textDecoration: 'underline', cursor: 'pointer' }}>
+                {item.lead?.company_name || item.company_name || item.name || 'Prospect'}
+              </span>
+              {item.scheduled_at && (
+                <span style={S.todayTime}>
+                  <Clock size={10} style={{ marginRight: 2 }} />
+                  {new Date(item.scheduled_at).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </div>
+          </div>
+          {item._type === 'callback' && (
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button onClick={() => openEdit(item)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}>
+                <Edit2 size={12} color="#7b859e" />
+              </button>
+              <button onClick={() => handleDelete(item)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}>
+                <Trash2 size={12} color="#dc2626" />
+              </button>
+            </div>
+          )}
         </div>
       ))}
     </div>
@@ -620,7 +726,7 @@ export default function DashboardPage() {
                   <span style={S.cardBadge}>{callbacks.length + dailyList.length}</span>
                 )}
               </div>
-              <TodayPanel callbacks={callbacks} dailyList={dailyList} navigate={navigate} />
+              <TodayPanel callbacks={callbacks} dailyList={dailyList} navigate={navigate} onCallbacksChange={() => loadData(period)} />
             </div>
           </div>
         </div>

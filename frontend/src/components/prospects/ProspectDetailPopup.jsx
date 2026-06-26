@@ -27,6 +27,23 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
 
+  // Inline editing state
+  const [editing, setEditing] = useState(null);
+  const [editVal, setEditVal] = useState('');
+
+  const saveField = async (field, value) => {
+    try {
+      const tok = sessionStorage.getItem('auth_token');
+      await fetch(`/api/v1/leads/${leadId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
+        body: JSON.stringify({ [field]: value }),
+      });
+      if (onUpdate) onUpdate({ [field]: value });
+    } catch(e) { console.error('Save failed', e); }
+  };
+
+
   // Callback state
   const [callbackDate, setCallbackDate] = useState('');
   const [callbackNote, setCallbackNote] = useState('');
@@ -70,6 +87,8 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
   const [expandedConv, setExpandedConv] = useState(null);
   const [showLogForm, setShowLogForm] = useState(false);
   const [showUploadForm, setShowUploadForm] = useState(false);
+  const [prospectDocs, setProspectDocs] = useState([]);
+  const [docsLoading, setDocsLoading] = useState(false);
   const [showWAImport, setShowWAImport] = useState(false);
   const [convForm, setConvForm] = useState({
     type: 'phone', direction: 'outbound', contact_value: '',
@@ -152,6 +171,50 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
 
   // Lead ID for API calls
   const leadId = prospect._raw?.id || prospect.id;
+
+  const fetchProspectDocs = async () => {
+    if (!leadId) return;
+    setDocsLoading(true);
+    try {
+      const res = await fetch(`/api/v1/documents/lead/${leadId}`, {
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setProspectDocs(data.documents || data || []);
+      }
+    } catch (e) { console.error('Docs fetch failed', e); }
+    finally { setDocsLoading(false); }
+  };
+
+  const uploadProspectDoc = async (file) => {
+    if (!file || !leadId) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    const params = new URLSearchParams({ lead_id: leadId, category: 'prospect' });
+    try {
+      const res = await fetch(`/api/v1/documents/upload?${params}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token()}` },
+        body: formData,
+      });
+      if (res.ok) { fetchProspectDocs(); }
+      else { alert('Upload mislukt'); }
+    } catch (e) { alert('Upload fout: ' + e.message); }
+  };
+
+  const deleteProspectDoc = async (docId) => {
+    if (!window.confirm('Document verwijderen?')) return;
+    try {
+      const res = await fetch(`/api/v1/documents/${docId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      if (res.ok) { setProspectDocs(prev => prev.filter(d => d.id !== docId)); }
+    } catch (e) { console.error('Delete failed', e); }
+  };
+
+  React.useEffect(() => { fetchProspectDocs(); }, [leadId]);
 
   // Fetch communications
   useEffect(() => {
@@ -814,23 +877,77 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
           {/* ─── Algemeen Tab ─── */}
           {activeTab === 'general' && (
             <div className="space-y-6">
-              {/* Company Info */}
+              {/* Company Info - Inline Editable */}
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-semibold text-[#011745] mb-2">Bedrijf</label>
-                  <p className="text-[#566079]">{prospect.company}</p>
+                  {editing === 'company_name' ? (
+                    <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
+                      onBlur={() => { saveField('company_name', editVal); setEditing(null); }}
+                      onKeyDown={e => e.key === 'Enter' && (saveField('company_name', editVal), setEditing(null))}
+                      className="border rounded px-2 py-1 text-sm w-full border-[#3d61a4] outline-none" />
+                  ) : (
+                    <span onClick={() => { setEditing('company_name'); setEditVal(prospect._raw?.company_name || prospect.company || ''); }}
+                      className="text-[#566079] cursor-pointer hover:bg-blue-50 px-1 rounded block min-h-[1.5rem]">
+                      {prospect._raw?.company_name || prospect.company || '—'}
+                    </span>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-[#011745] mb-2">Website</label>
-                  <p className="text-[#566079]">{prospect.website || '—'}</p>
+                  {editing === 'company_website' ? (
+                    <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
+                      onBlur={() => { saveField('company_website', editVal); setEditing(null); }}
+                      onKeyDown={e => e.key === 'Enter' && (saveField('company_website', editVal), setEditing(null))}
+                      className="border rounded px-2 py-1 text-sm w-full border-[#3d61a4] outline-none" />
+                  ) : (
+                    <span onClick={() => { setEditing('company_website'); setEditVal(prospect._raw?.company_website || prospect.website || ''); }}
+                      className="text-[#566079] cursor-pointer hover:bg-blue-50 px-1 rounded block min-h-[1.5rem]">
+                      {prospect._raw?.company_website || prospect.website || '—'}
+                    </span>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-[#011745] mb-2">Land</label>
-                  <p className="text-[#566079]">{prospect.country || '—'}</p>
+                  {editing === 'company_country' ? (
+                    <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
+                      onBlur={() => { saveField('company_country', editVal); setEditing(null); }}
+                      onKeyDown={e => e.key === 'Enter' && (saveField('company_country', editVal), setEditing(null))}
+                      className="border rounded px-2 py-1 text-sm w-full border-[#3d61a4] outline-none" />
+                  ) : (
+                    <span onClick={() => { setEditing('company_country'); setEditVal(prospect._raw?.company_country || prospect.country || ''); }}
+                      className="text-[#566079] cursor-pointer hover:bg-blue-50 px-1 rounded block min-h-[1.5rem]">
+                      {prospect._raw?.company_country || prospect.country || '—'}
+                    </span>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-[#011745] mb-2">Industrie</label>
-                  <p className="text-[#566079]">{prospect.industry || '—'}</p>
+                  {editing === 'company_industry' ? (
+                    <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
+                      onBlur={() => { saveField('company_industry', editVal); setEditing(null); }}
+                      onKeyDown={e => e.key === 'Enter' && (saveField('company_industry', editVal), setEditing(null))}
+                      className="border rounded px-2 py-1 text-sm w-full border-[#3d61a4] outline-none" />
+                  ) : (
+                    <span onClick={() => { setEditing('company_industry'); setEditVal(prospect._raw?.company_industry || prospect.industry || ''); }}
+                      className="text-[#566079] cursor-pointer hover:bg-blue-50 px-1 rounded block min-h-[1.5rem]">
+                      {prospect._raw?.company_industry || prospect.industry || '—'}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-[#011745] mb-2">KVK</label>
+                  {editing === 'kvk_number' ? (
+                    <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
+                      onBlur={() => { saveField('kvk_number', editVal); setEditing(null); }}
+                      onKeyDown={e => e.key === 'Enter' && (saveField('kvk_number', editVal), setEditing(null))}
+                      className="border rounded px-2 py-1 text-sm w-full border-[#3d61a4] outline-none" />
+                  ) : (
+                    <span onClick={() => { setEditing('kvk_number'); setEditVal(prospect._raw?.kvk_number || ''); }}
+                      className="text-[#566079] cursor-pointer hover:bg-blue-50 px-1 rounded block min-h-[1.5rem]">
+                      {prospect._raw?.kvk_number || '—'}
+                    </span>
+                  )}
                 </div>
                 {prospect.broker && (
                   <div>
@@ -839,30 +956,68 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
                   </div>
                 )}
               </div>
-
-              {/* Contact Info */}
+              {/* Contact Info - Inline Editable */}
               <div className="border-t border-[#e8eaf2] pt-6">
                 <h3 className="font-semibold text-[#011745] mb-4">Contactpersoon</h3>
                 <div className="grid grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-[#566079] mb-1">Naam</label>
-                    <p className="text-[#011745]">{prospect.contactName}</p>
+                    {editing === 'contact_name' ? (
+                      <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
+                        onBlur={() => { saveField('contact_name', editVal); setEditing(null); }}
+                        onKeyDown={e => e.key === 'Enter' && (saveField('contact_name', editVal), setEditing(null))}
+                        className="border rounded px-2 py-1 text-sm w-full border-[#3d61a4] outline-none" />
+                    ) : (
+                      <span onClick={() => { setEditing('contact_name'); setEditVal(prospect._raw?.contact_name || prospect.contactName || ''); }}
+                        className="text-[#011745] cursor-pointer hover:bg-blue-50 px-1 rounded block min-h-[1.5rem]">
+                        {prospect._raw?.contact_name || prospect.contactName || '—'}
+                      </span>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-[#566079] mb-1">Functie</label>
-                    <p className="text-[#011745]">{prospect.position || '—'}</p>
+                    {editing === 'contact_position' ? (
+                      <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
+                        onBlur={() => { saveField('contact_position', editVal); setEditing(null); }}
+                        onKeyDown={e => e.key === 'Enter' && (saveField('contact_position', editVal), setEditing(null))}
+                        className="border rounded px-2 py-1 text-sm w-full border-[#3d61a4] outline-none" />
+                    ) : (
+                      <span onClick={() => { setEditing('contact_position'); setEditVal(prospect._raw?.contact_position || prospect.position || ''); }}
+                        className="text-[#011745] cursor-pointer hover:bg-blue-50 px-1 rounded block min-h-[1.5rem]">
+                        {prospect._raw?.contact_position || prospect.position || '—'}
+                      </span>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-[#566079] mb-1">E-mail</label>
-                    <p className="text-[#011745]">{prospect.email || '—'}</p>
+                    {editing === 'contact_email' ? (
+                      <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
+                        onBlur={() => { saveField('contact_email', editVal); setEditing(null); }}
+                        onKeyDown={e => e.key === 'Enter' && (saveField('contact_email', editVal), setEditing(null))}
+                        className="border rounded px-2 py-1 text-sm w-full border-[#3d61a4] outline-none" />
+                    ) : (
+                      <span onClick={() => { setEditing('contact_email'); setEditVal(prospect._raw?.contact_email || prospect.email || ''); }}
+                        className="text-[#011745] cursor-pointer hover:bg-blue-50 px-1 rounded block min-h-[1.5rem]">
+                        {prospect._raw?.contact_email || prospect.email || '—'}
+                      </span>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-[#566079] mb-1">Telefoon</label>
-                    <p className="text-[#011745]">{prospect.phone || '—'}</p>
+                    {editing === 'contact_phone' ? (
+                      <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
+                        onBlur={() => { saveField('contact_phone', editVal); setEditing(null); }}
+                        onKeyDown={e => e.key === 'Enter' && (saveField('contact_phone', editVal), setEditing(null))}
+                        className="border rounded px-2 py-1 text-sm w-full border-[#3d61a4] outline-none" />
+                    ) : (
+                      <span onClick={() => { setEditing('contact_phone'); setEditVal(prospect._raw?.contact_phone || prospect.phone || ''); }}
+                        className="text-[#011745] cursor-pointer hover:bg-blue-50 px-1 rounded block min-h-[1.5rem]">
+                        {prospect._raw?.contact_phone || prospect.phone || '—'}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
-
               {/* ═══ SCHEDULING SECTION ═══ */}
               <div className="border-t border-[#e8eaf2] pt-6 space-y-6">
                 <h3 className="font-semibold text-[#011745] flex items-center gap-2">
@@ -1204,7 +1359,30 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
               {/* Documents */}
               <div className="border-t border-[#e8eaf2] pt-6">
                 <h3 className="font-semibold text-[#011745] mb-4">Documenten</h3>
-                <DocumentUpload />
+                <div className="space-y-2">
+                  {docsLoading ? (
+                    <p className="text-xs text-[#a4abbe]">Laden...</p>
+                  ) : prospectDocs.length === 0 ? (
+                    <p className="text-sm text-[#a4abbe]">Nog geen documenten geüpload</p>
+                  ) : (
+                    prospectDocs.map(doc => (
+                      <div key={doc.id} className="flex items-center gap-2 p-2 bg-[#f7f8fc] rounded-lg border border-[#e8eaf2]">
+                        <FileText size={14} style={{ color: '#3d61a4' }} />
+                        <span className="text-sm flex-1 truncate" style={{ color: '#011745' }}>{doc.original_filename}</span>
+                        <span className="text-xs" style={{ color: '#a4abbe' }}>{doc.file_size ? (doc.file_size/1024).toFixed(0) + ' KB' : ''}</span>
+                        <button onClick={() => deleteProspectDoc(doc.id)}
+                          className="p-1 rounded hover:bg-red-50 transition-colors">
+                          <Trash2 size={12} style={{ color: '#dc2626' }} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                  <label className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg border border-dashed border-[#e8eaf2] hover:border-[#3d61a4] transition-colors mt-2">
+                    <Upload size={14} style={{ color: '#3d61a4' }} />
+                    <span className="text-sm" style={{ color: '#3d61a4' }}>Document uploaden</span>
+                    <input type="file" className="hidden" onChange={e => { if (e.target.files[0]) uploadProspectDoc(e.target.files[0]); e.target.value=''; }} />
+                  </label>
+                </div>
               </div>
 
               {/* Strategy */}
@@ -1315,10 +1493,82 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
               {/* Revenue Card */}
               <RevenueCard tfData={tfDetails} />
 
+              {/* TF Revenue Potentie (uit lead fase) */}
+              {(() => {
+                let rows = [];
+                const tfRaw = prospect._raw?.tf_revenue_potential || prospect.tf_revenue_potential;
+                if (Array.isArray(tfRaw)) rows = tfRaw;
+                else if (typeof tfRaw === 'string') { try { rows = JSON.parse(tfRaw); } catch { rows = []; } }
+                if (!rows || rows.length === 0) return null;
+                const fmt = (v) => new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(Number(v) || 0);
+                const totalTf = rows.reduce((sum, r) => sum + (Number(r.bedrag) || 0) * ((Number(r.percentage) || 0) / 100), 0);
+                return (
+                  <div className="rounded-xl p-4 mt-4" style={{ backgroundColor: '#fef3c7', border: '1px solid #fde68a' }}>
+                    <h4 className="text-xs font-semibold uppercase mb-3" style={{ color: '#92400e' }}>
+                      TF Revenue Potentie (uit lead fase)
+                    </h4>
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr style={{ color: '#92400e' }}>
+                          <th className="text-left pb-2 font-semibold">Product</th>
+                          <th className="text-right pb-2 font-semibold">Bedrag (€)</th>
+                          <th className="text-right pb-2 font-semibold">Marge%</th>
+                          <th className="text-right pb-2 font-semibold">Revenue (€)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#fde68a]">
+                        {rows.map((r, i) => {
+                          const bedrag = Number(r.bedrag) || 0;
+                          const pct = Number(r.percentage) || 0;
+                          return (
+                            <tr key={r.id || i}>
+                              <td className="py-1.5 font-medium" style={{ color: '#011745' }}>{r.product || '—'}</td>
+                              <td className="py-1.5 text-right" style={{ color: '#566079' }}>{fmt(bedrag)}</td>
+                              <td className="py-1.5 text-right" style={{ color: '#566079' }}>{pct.toFixed(2)}%</td>
+                              <td className="py-1.5 text-right font-semibold" style={{ color: '#011745' }}>{fmt(bedrag * pct / 100)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ borderTop: '2px solid #d97706' }}>
+                          <td className="pt-2 font-bold" style={{ color: '#92400e' }}>Totaal</td>
+                          <td colSpan={2} />
+                          <td className="pt-2 text-right font-bold" style={{ color: '#92400e' }}>{fmt(totalTf)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                );
+              })()}
+
               {/* Documents */}
               <div className="border-t border-[#e8eaf2] pt-6">
                 <h3 className="font-semibold text-[#011745] mb-4">Documenten</h3>
-                <DocumentUpload />
+                <div className="space-y-2">
+                  {docsLoading ? (
+                    <p className="text-xs text-[#a4abbe]">Laden...</p>
+                  ) : prospectDocs.length === 0 ? (
+                    <p className="text-sm text-[#a4abbe]">Nog geen documenten geüpload</p>
+                  ) : (
+                    prospectDocs.map(doc => (
+                      <div key={doc.id} className="flex items-center gap-2 p-2 bg-[#f7f8fc] rounded-lg border border-[#e8eaf2]">
+                        <FileText size={14} style={{ color: '#3d61a4' }} />
+                        <span className="text-sm flex-1 truncate" style={{ color: '#011745' }}>{doc.original_filename}</span>
+                        <span className="text-xs" style={{ color: '#a4abbe' }}>{doc.file_size ? (doc.file_size/1024).toFixed(0) + ' KB' : ''}</span>
+                        <button onClick={() => deleteProspectDoc(doc.id)}
+                          className="p-1 rounded hover:bg-red-50 transition-colors">
+                          <Trash2 size={12} style={{ color: '#dc2626' }} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                  <label className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg border border-dashed border-[#e8eaf2] hover:border-[#3d61a4] transition-colors mt-2">
+                    <Upload size={14} style={{ color: '#3d61a4' }} />
+                    <span className="text-sm" style={{ color: '#3d61a4' }}>Document uploaden</span>
+                    <input type="file" className="hidden" onChange={e => { if (e.target.files[0]) uploadProspectDoc(e.target.files[0]); e.target.value=''; }} />
+                  </label>
+                </div>
               </div>
             </div>
           )}

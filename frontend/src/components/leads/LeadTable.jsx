@@ -133,7 +133,7 @@ export default function LeadTable({
       )}
 
       {/* Table */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto" style={{ overflowY: "visible" }}>
         <table className="w-full">
           <thead>
             <tr className="bg-[#f7f8fc] border-b border-[#e8eaf2]">
@@ -356,7 +356,7 @@ export default function LeadTable({
                         />
                       </svg>
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-xs font-bold text-[#011745]">{lead.score}</span>
+                        <span className="text-xs font-bold text-[#011745]">{Math.round(lead.score / 10)}/10</span>
                       </div>
                     </div>
                   </div>
