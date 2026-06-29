@@ -278,8 +278,8 @@ async def create_lead(
     for _alias, _target in [('country','company_country'),('contact_person','contact_name'),('email','contact_email'),('phone','contact_phone')]:
         _v = _lead_dump.pop(_alias, None)
         if _v and not _lead_dump.get(_target): _lead_dump[_target] = _v
-    # Auto-set sales_owner_id for extern/sales so new leads go into their board
-    _auto_owner_id = current_user.id if current_user.role in ("extern", "sales") else None
+    # Auto-set sales_owner_id for ALL roles so new leads always appear in 'Mijn Leads'
+    _auto_owner_id = current_user.id
 
     lead = Lead(
         **_lead_dump,

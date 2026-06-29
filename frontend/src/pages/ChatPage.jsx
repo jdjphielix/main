@@ -33,6 +33,10 @@ export default function ChatPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const messagesEndRef = useRef(null);
   const wsRef = useRef(null);
+  const [showMemberPanel, setShowMemberPanel] = useState(false);
+  const [addMemberSearch, setAddMemberSearch] = useState('');
+  const [allUsers, setAllUsers] = useState([]);
+  const [addingMember, setAddingMember] = useState(null);
 
   // Fetch channels
   const fetchChannels = useCallback(async () => {
@@ -182,6 +186,65 @@ export default function ChatPage() {
     setSelectedMembers(prev =>
       prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
     );
+  }
+
+  // Load all team users for member panel
+  async function openMemberPanel() {
+    setShowMemberPanel(true);
+    setAddMemberSearch('');
+    try {
+      const data = await api('/api/v1/users/team');
+      setAllUsers((data || []).filter(u => u.status !== 'inactive'));
+    } catch {}
+  }
+
+  async function addMemberToChannel(userId) {
+    if (!activeChannel || addingMember) return;
+    setAddingMember(userId);
+    try {
+      await api(`/api/v1/chat/channels/${activeChannel.id}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ user_id: userId }),
+      });
+      // Update local channel members
+      const addedUser = allUsers.find(u => u.id === userId);
+      if (addedUser) {
+        setActiveChannel(prev => ({
+          ...prev,
+          members: [...(prev.members || []), { id: userId, name: addedUser.full_name }],
+        }));
+        setChannels(prev => prev.map(c =>
+          c.id === activeChannel.id
+            ? { ...c, members: [...(c.members || []), { id: userId, name: addedUser.full_name }] }
+            : c
+        ));
+      }
+    } catch (err) {
+      alert('Toevoegen mislukt: ' + err.message);
+    }
+    setAddingMember(null);
+  }
+
+  async function removeMemberFromChannel(userId) {
+    if (!activeChannel) return;
+    if (!window.confirm('Lid verwijderen uit kanaal?')) return;
+    try {
+      const res = await fetch(`/api/v1/chat/channels/${activeChannel.id}/members/${userId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      if (res.ok) {
+        setActiveChannel(prev => ({
+          ...prev,
+          members: (prev.members || []).filter(m => m.id !== userId),
+        }));
+        setChannels(prev => prev.map(c =>
+          c.id === activeChannel.id
+            ? { ...c, members: (c.members || []).filter(m => m.id !== userId) }
+            : c
+        ));
+      }
+    } catch {}
   }
 
   function formatTime(dateStr) {
@@ -343,7 +406,92 @@ export default function ChatPage() {
                   </p>
                 </div>
               </div>
+              <button
+                onClick={openMemberPanel}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-[#eef2fa] transition-colors"
+                style={{ color: '#3d61a4' }}
+                title="Leden beheren"
+              >
+                <Users size={15} />
+                Leden beheren
+              </button>
             </div>
+
+            {/* Member Panel */}
+            {showMemberPanel && (
+              <div className="bg-white border-b border-[#e8eaf2] px-6 py-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-semibold" style={{ color: '#011745' }}>Kanaalleden</h4>
+                  <button onClick={() => setShowMemberPanel(false)} style={{ color: '#a4abbe' }}>
+                    <X size={16} />
+                  </button>
+                </div>
+
+                {/* Current members */}
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {(activeChannel.members || []).map(m => (
+                    <div key={m.id} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+                      style={{ backgroundColor: '#eef2fa', color: '#3d61a4' }}>
+                      <span>{m.name}</span>
+                      <button
+                        onClick={() => removeMemberFromChannel(m.id)}
+                        className="hover:text-red-500 transition-colors ml-0.5"
+                        title="Verwijderen"
+                      >
+                        <X size={11} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add member search */}
+                <div className="relative mb-2">
+                  <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#a4abbe' }} />
+                  <input
+                    type="text"
+                    placeholder="Gebruiker zoeken om toe te voegen..."
+                    value={addMemberSearch}
+                    onChange={e => setAddMemberSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-[#f7f8fc] rounded-lg border border-[#e8eaf2] text-xs focus:outline-none focus:border-[#3d61a4]"
+                    style={{ color: '#566079' }}
+                  />
+                </div>
+                <div className="max-h-36 overflow-y-auto space-y-0.5">
+                  {allUsers
+                    .filter(u => {
+                      const alreadyMember = (activeChannel.members || []).some(m => m.id === u.id);
+                      const matchSearch = !addMemberSearch || u.full_name?.toLowerCase().includes(addMemberSearch.toLowerCase()) || u.email?.toLowerCase().includes(addMemberSearch.toLowerCase());
+                      return !alreadyMember && matchSearch;
+                    })
+                    .map(u => (
+                      <div key={u.id}
+                        className="flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-[#f7f8fc] transition-colors">
+                        <div>
+                          <span className="text-xs font-medium" style={{ color: '#011745' }}>{u.full_name}</span>
+                          <span className="text-[10px] ml-2" style={{ color: '#a4abbe' }}>{u.email}</span>
+                        </div>
+                        <button
+                          onClick={() => addMemberToChannel(u.id)}
+                          disabled={addingMember === u.id}
+                          className="text-xs px-2.5 py-1 rounded-lg font-medium transition-colors disabled:opacity-50"
+                          style={{ backgroundColor: '#eef2fa', color: '#3d61a4' }}
+                        >
+                          {addingMember === u.id ? '...' : '+ Toevoegen'}
+                        </button>
+                      </div>
+                    ))}
+                  {allUsers.filter(u => {
+                    const alreadyMember = (activeChannel.members || []).some(m => m.id === u.id);
+                    const matchSearch = !addMemberSearch || u.full_name?.toLowerCase().includes(addMemberSearch.toLowerCase()) || u.email?.toLowerCase().includes(addMemberSearch.toLowerCase());
+                    return !alreadyMember && matchSearch;
+                  }).length === 0 && (
+                    <p className="text-xs text-center py-2" style={{ color: '#a4abbe' }}>
+                      {addMemberSearch ? 'Geen gebruikers gevonden' : 'Alle teamleden zijn al lid'}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Messages */}
             <div className="flex-1 overflow-auto px-6 py-4">
