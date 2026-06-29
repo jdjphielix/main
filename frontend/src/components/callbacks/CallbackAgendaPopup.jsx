@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, ChevronLeft, ChevronRight, Calendar, Clock, Building2, User, Loader2, AlertCircle } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Calendar, Clock, Building2, User, Loader2, AlertCircle, Pencil, Trash2, Save, ExternalLink } from 'lucide-react';
 
 const MONTHS_NL = [
   'Januari', 'Februari', 'Maart', 'April', 'Mei', 'Juni',
@@ -17,6 +17,58 @@ export default function CallbackAgendaPopup({ isOpen, onClose, onOpenLead }) {
   const [callbacks, setCallbacks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({ date: '', time: '', callback_type: 'call', internal_note: '' });
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const startEdit = (cb) => {
+    const d = cb.scheduled_at ? new Date(cb.scheduled_at) : new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    setEditForm({
+      date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+      time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+      callback_type: cb.callback_type || 'call',
+      internal_note: cb.internal_note || '',
+    });
+    setEditingId(cb.id);
+  };
+
+  const saveEdit = async (cbId) => {
+    setSavingEdit(true);
+    try {
+      const scheduled_at = new Date(`${editForm.date}T${editForm.time}:00`).toISOString();
+      const res = await fetch(`/api/v1/callbacks/${cbId}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scheduled_at,
+          callback_type: editForm.callback_type,
+          internal_note: editForm.internal_note,
+        }),
+      });
+      if (!res.ok) throw new Error('Opslaan mislukt');
+      setEditingId(null);
+      await fetchCallbacks();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const deleteCallback = async (cbId) => {
+    if (!window.confirm('Deze callback verwijderen?')) return;
+    try {
+      const res = await fetch(`/api/v1/callbacks/${cbId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok) throw new Error('Verwijderen mislukt');
+      await fetchCallbacks();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
 
   const fetchCallbacks = useCallback(async () => {
     setLoading(true);
@@ -289,11 +341,68 @@ export default function CallbackAgendaPopup({ isOpen, onClose, onOpenLead }) {
                           const contactName = cb.lead?.contact_name;
                           const isPast = new Date(cb.scheduled_at) < new Date();
 
+                          const isEditing = editingId === cb.id;
+
+                          if (isEditing) {
+                            return (
+                              <div key={cb.id} className="rounded-xl border p-4"
+                                style={{ borderColor: '#3d61a4', backgroundColor: '#f7f8fc' }}>
+                                <p className="text-xs font-bold mb-2" style={{ color: '#011745' }}>
+                                  Callback bewerken — {leadName}
+                                </p>
+                                <div className="grid grid-cols-2 gap-2 mb-2">
+                                  <div>
+                                    <label className="text-[10px] font-semibold" style={{ color: '#7b859e' }}>Datum</label>
+                                    <input type="date" value={editForm.date}
+                                      onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))}
+                                      className="w-full px-2 py-1.5 rounded-lg border text-xs"
+                                      style={{ borderColor: '#cdd1e0', color: '#252f4a' }} />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] font-semibold" style={{ color: '#7b859e' }}>Tijd</label>
+                                    <input type="time" value={editForm.time}
+                                      onChange={e => setEditForm(f => ({ ...f, time: e.target.value }))}
+                                      className="w-full px-2 py-1.5 rounded-lg border text-xs"
+                                      style={{ borderColor: '#cdd1e0', color: '#252f4a' }} />
+                                  </div>
+                                </div>
+                                <div className="mb-2">
+                                  <label className="text-[10px] font-semibold" style={{ color: '#7b859e' }}>Type</label>
+                                  <select value={editForm.callback_type}
+                                    onChange={e => setEditForm(f => ({ ...f, callback_type: e.target.value }))}
+                                    className="w-full px-2 py-1.5 rounded-lg border text-xs"
+                                    style={{ borderColor: '#cdd1e0', color: '#252f4a' }}>
+                                    <option value="call">Telefoongesprek</option>
+                                    <option value="meeting">Meeting</option>
+                                  </select>
+                                </div>
+                                <div className="mb-3">
+                                  <label className="text-[10px] font-semibold" style={{ color: '#7b859e' }}>Notitie</label>
+                                  <textarea value={editForm.internal_note} rows={2}
+                                    onChange={e => setEditForm(f => ({ ...f, internal_note: e.target.value }))}
+                                    className="w-full px-2 py-1.5 rounded-lg border text-xs resize-none"
+                                    style={{ borderColor: '#cdd1e0', color: '#252f4a' }} />
+                                </div>
+                                <div className="flex gap-2">
+                                  <button onClick={() => saveEdit(cb.id)} disabled={savingEdit}
+                                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-medium disabled:opacity-50"
+                                    style={{ backgroundColor: '#3d61a4' }}>
+                                    {savingEdit ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                                    Opslaan
+                                  </button>
+                                  <button onClick={() => setEditingId(null)}
+                                    className="px-3 py-1.5 rounded-lg text-xs" style={{ color: '#7b859e' }}>
+                                    Annuleer
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          }
+
                           return (
                             <div
                               key={cb.id}
-                              onClick={() => onOpenLead && onOpenLead(cb.lead_id)}
-                              className="rounded-xl border p-4 transition-all hover:shadow-md cursor-pointer group"
+                              className="rounded-xl border p-4 transition-all hover:shadow-md group"
                               style={{
                                 borderColor: '#e8eaf2',
                                 backgroundColor: '#fff',
@@ -313,14 +422,16 @@ export default function CallbackAgendaPopup({ isOpen, onClose, onOpenLead }) {
                                   )}
                                 </div>
 
-                                {/* Info */}
-                                <div className="flex-1 min-w-0">
+                                {/* Info — click opens the lead/prospect */}
+                                <div className="flex-1 min-w-0 cursor-pointer"
+                                  onClick={() => onOpenLead && onOpenLead(cb.lead_id, cb.lead?.pipeline_stage)}>
                                   <div className="flex items-center gap-2">
                                     <Building2 size={13} style={{ color: '#3d61a4', flexShrink: 0 }} />
                                     <span className="text-sm font-semibold truncate group-hover:text-[#3d61a4] transition-colors"
                                       style={{ color: '#011745' }}>
                                       {leadName}
                                     </span>
+                                    <ExternalLink size={11} style={{ color: '#a4abbe', flexShrink: 0 }} />
                                   </div>
                                   {contactName && (
                                     <div className="flex items-center gap-1.5 mt-1">
@@ -341,6 +452,18 @@ export default function CallbackAgendaPopup({ isOpen, onClose, onOpenLead }) {
                                       Ingepland door {cb.created_by_name}
                                     </p>
                                   )}
+                                </div>
+
+                                {/* Actions: edit + delete */}
+                                <div className="flex-shrink-0 flex flex-col gap-1">
+                                  <button onClick={() => startEdit(cb)} title="Bewerken"
+                                    className="p-1.5 rounded-lg hover:bg-[#eef2fa]" style={{ color: '#3d61a4' }}>
+                                    <Pencil size={13} />
+                                  </button>
+                                  <button onClick={() => deleteCallback(cb.id)} title="Verwijderen"
+                                    className="p-1.5 rounded-lg hover:bg-red-50" style={{ color: '#df2f4a' }}>
+                                    <Trash2 size={13} />
+                                  </button>
                                 </div>
                               </div>
                             </div>

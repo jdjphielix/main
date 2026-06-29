@@ -25,9 +25,6 @@ async def list_requirements(
     db: Session = Depends(get_db),
 ):
     """List all onboarding requirements, optionally filtered by product_type."""
-    _allowed = ("admin_pay", "admin_trade", "backoffice", "teamleader")
-    if current_user.role not in _allowed and not current_user.is_teamleader:
-        raise HTTPException(status_code=403, detail="Geen toegang tot onboarding vereisten")
     query = db.query(OnboardingRequirement)
     if product_type:
         query = query.filter(OnboardingRequirement.product_type == product_type)
@@ -144,17 +141,13 @@ async def delete_requirement(
 
 @router.get("/pnl")
 async def get_pnl_overview(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """
     P&L Management: aggregate all client forecasting data.
     Revenue = sum(volume_per_year * margin_per_year) for each currency pair across all clients.
     """
-    # Role check: admin or finance
-    if current_user.role not in ("admin_pay", "admin_trade", "finance") and not current_user.is_teamleader:
-        raise HTTPException(status_code=403, detail="Geen toegang tot P&L module")
-
     # Get all forecasting items with their lead info
     items = (
         db.query(ClientForecasting, Lead.company_name, Lead.id)
@@ -379,3 +372,21 @@ async def update_compliance_case_admin(
     db.commit()
 
     return {"id": case.id, "status": case.status, "priority": case.priority, "broker": case.broker}
+
+
+@router.delete("/compliance/{case_id}")
+async def delete_compliance_case_admin(
+    case_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Delete a compliance case (ticket) from the admin panel."""
+    case = db.query(ComplianceCase).filter(ComplianceCase.id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Compliance case not found")
+    # Remove attached case-documents links first to avoid orphan rows
+    for d in list(case.documents or []):
+        db.delete(d)
+    db.delete(case)
+    db.commit()
+    return {"status": "deleted", "id": case_id}

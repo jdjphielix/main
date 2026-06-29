@@ -114,14 +114,9 @@ function DropZone({ onFiles, uploading }) {
 
 export default function ClientsPage({ myClientsOnly = false }) {
   const { user: currentUser } = useAuth();
-  const isDealer = ['admin_pay', 'admin_trade', 'dealer', 'accountmanager'].includes(currentUser?.role) || currentUser?.is_teamleader;
-  const isAccountManagerRole = currentUser?.role === 'accountmanager' && !currentUser?.is_teamleader;
-  const [amListTab, setAmListTab] = useState('alle'); // 'alle' | 'mijn' for accountmanager
+  const isDealer = ['admin_pay', 'admin_trade', 'dealer'].includes(currentUser?.role) || currentUser?.is_teamleader;
   const [allUsers, setAllUsers] = useState([]);
   const [changingSalesOwner, setChangingSalesOwner] = useState(false);
-  const [accountManagers, setAccountManagers] = useState([]);
-  const [filterAccountManager, setFilterAccountManager] = useState('');
-  const [assigningAM, setAssigningAM] = useState(false);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -166,10 +161,6 @@ export default function ClientsPage({ myClientsOnly = false }) {
   const [compliancePendingFiles, setCompliancePendingFiles] = useState([]);
   const [complianceUploading, setComplianceUploading] = useState(false);
   const [savingCompliance, setSavingCompliance] = useState(false);
-
-  // Account plan state
-  const [accountPlan, setAccountPlan] = useState('');
-  const [savingAccountPlan, setSavingAccountPlan] = useState(false);
 
   // Correspondentie state
   const [correspondence, setCorrespondence] = useState(null);
@@ -238,57 +229,9 @@ export default function ClientsPage({ myClientsOnly = false }) {
     finally { setSavingPricing(false); }
   }
 
-  // Toggle TaperPay / TaperTrade product activation
-  async function toggleProduct(field, value) {
-    if (!selectedClient) return;
-    try {
-      const res = await api(`/api/v1/prospects/${selectedClient.id}/prospect-data`, {
-        method: 'PUT',
-        body: JSON.stringify({ [field]: value }),
-      });
-      const updated = await fetch(`/api/v1/prospects/${selectedClient.id}`, {
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      if (updated.ok) setProspectDetails(await updated.json());
-    } catch (err) { alert('Opslaan mislukt: ' + err.message); }
-  }
-
-  // Save account plan
-  async function saveAccountPlan() {
-    if (!selectedClient) return;
-    setSavingAccountPlan(true);
-    try {
-      await api(`/api/v1/prospects/${selectedClient.id}/prospect-data`, {
-        method: 'PUT',
-        body: JSON.stringify({ account_plan: accountPlan }),
-      });
-      const updated = await fetch(`/api/v1/prospects/${selectedClient.id}`, {
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      if (updated.ok) setProspectDetails(await updated.json());
-    } catch (err) { alert('Opslaan mislukt: ' + err.message); }
-    finally { setSavingAccountPlan(false); }
-  }
-
   // Bedrijfsinfo edit state
   const [editingClientInfo, setEditingClientInfo] = useState(false);
   const [clientInfoEdits, setClientInfoEdits] = useState({});
-
-  // pd must be declared BEFORE the useEffect that depends on it (avoids TDZ in production build)
-  const pd = prospectDetails?.prospect_data;
-
-  // Sync accountPlan from prospect data
-  useEffect(() => {
-    if (pd) setAccountPlan(pd.account_plan || '');
-  }, [pd]);
-
-  // Load account managers
-  useEffect(() => {
-    fetch('/api/v1/users/team', { headers: { Authorization: `Bearer ${token()}` } })
-      .then(r => r.json())
-      .then(users => setAccountManagers((users || []).filter(u => u.role === 'accountmanager')))
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     if (!isDealer) return;
@@ -305,8 +248,6 @@ export default function ClientsPage({ myClientsOnly = false }) {
       const params = new URLSearchParams({ page_size: '200', pipeline_stage: 'client' });
       if (searchQuery) params.set('search', searchQuery);
       if (myClientsOnly) params.set('my_clients', 'true');
-      if (isAccountManagerRole) params.set("account_manager_id", String(currentUser.id));
-      if (filterAccountManager) params.set('account_manager_id', filterAccountManager);
       const res = await fetch(`/api/v1/leads/?${params}`, {
         headers: { Authorization: `Bearer ${token()}` },
       });
@@ -318,7 +259,7 @@ export default function ClientsPage({ myClientsOnly = false }) {
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, myClientsOnly, filterAccountManager, amListTab, isAccountManagerRole]);
+  }, [searchQuery, myClientsOnly]);
 
   useEffect(() => { fetchClients(); }, [fetchClients]);
 
@@ -648,17 +589,6 @@ export default function ClientsPage({ myClientsOnly = false }) {
         }
         setComplianceUploading(false);
       }
-      // Also create a linked ticket in the ticket system so it shows up in /tickets
-      await api(`/api/v1/tickets/`, {
-        method: 'POST',
-        body: JSON.stringify({
-          title: complianceForm.title,
-          description: complianceForm.description || '',
-          priority: complianceForm.priority || 'normal',
-          category: 'compliance',
-          related_lead_id: selectedClient.id,
-        }),
-      });
       const res = await fetch(`/api/v1/leads/${selectedClient.id}/compliance`, { headers: { Authorization: `Bearer ${token()}` } });
       if (res.ok) setComplianceCases(await res.json());
       setShowAddCompliance(false);
@@ -697,24 +627,6 @@ export default function ClientsPage({ myClientsOnly = false }) {
         if (res.ok) setComplianceCases(await res.json());
       }
     } catch (err) { console.error('Upload failed:', err); }
-  }
-
-  async function handleAssignAccountManager(managerId) {
-    if (!selectedClient) return;
-    setAssigningAM(true);
-    try {
-      await api(`/api/v1/leads/${selectedClient.id}/assign-account-manager`, {
-        method: 'POST',
-        body: JSON.stringify({ account_manager_id: managerId || null }),
-      });
-      setClients(prev => prev.map(c => c.id === selectedClient.id
-        ? { ...c, accountManagerId: managerId || null,
-            accountManagerName: accountManagers.find(u => u.id == managerId)?.full_name || null }
-        : c));
-      setSelectedClient(prev => prev ? { ...prev, accountManagerId: managerId || null,
-        accountManagerName: accountManagers.find(u => u.id == managerId)?.full_name || null } : null);
-    } catch (err) { alert('Opslaan mislukt: ' + err.message); }
-    finally { setAssigningAM(false); }
   }
 
   async function handleChangeSalesOwner(newUserId) {
@@ -756,6 +668,7 @@ export default function ClientsPage({ myClientsOnly = false }) {
     URL.revokeObjectURL(url);
   };
 
+  const pd = prospectDetails?.prospect_data;
 
   const handleExportClient = () => {
     if (!selectedClient) return;
@@ -791,8 +704,6 @@ export default function ClientsPage({ myClientsOnly = false }) {
         status: c.status,
         prioriteit: c.priority,
         salesOwner: c.sales_owner_name,
-        accountManagerId: c.account_manager_id || null,
-        accountManagerName: c.account_manager_name || null,
         aangemaakt: c.created_at,
       },
 
@@ -924,18 +835,6 @@ export default function ClientsPage({ myClientsOnly = false }) {
             </button>
           </div>
         </div>
-        {isAccountManagerRole && (
-          <div className="flex gap-1 bg-[#f3f4f8] rounded-lg p-1 w-fit mb-1">
-            <button onClick={() => setAmListTab('alle')}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${amListTab === 'alle' ? 'bg-white text-[#3d61a4] shadow-sm' : 'text-[#7b859e] hover:text-[#3d61a4]'}`}>
-              Alle clients
-            </button>
-            <button onClick={() => setAmListTab('mijn')}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${amListTab === 'mijn' ? 'bg-white text-[#3d61a4] shadow-sm' : 'text-[#7b859e] hover:text-[#3d61a4]'}`}>
-              Mijn clients
-            </button>
-          </div>
-        )}
         <div className="relative max-w-md">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#a4abbe' }} />
           <input type="text" placeholder="Zoek klanten op naam, contact of email..."
@@ -943,19 +842,6 @@ export default function ClientsPage({ myClientsOnly = false }) {
             className="w-full pl-9 pr-4 py-2 bg-[#f7f8fc] rounded-lg border border-[#e8eaf2] focus:border-[#3d61a4] focus:outline-none text-sm"
             style={{ color: '#566079' }} />
         </div>
-        {isDealer && accountManagers.length > 0 && (
-          <div className="flex items-center gap-2 mt-3">
-            <span className="text-xs font-medium" style={{ color: '#7b859e' }}>Filter accountmanager:</span>
-            <select value={filterAccountManager} onChange={e => setFilterAccountManager(e.target.value)}
-              className="px-3 py-1.5 rounded-lg border border-[#e8eaf2] text-xs bg-white focus:outline-none focus:border-[#3d61a4]"
-              style={{ color: '#566079' }}>
-              <option value="">Alle accountmanagers</option>
-              {accountManagers.map(am => (
-                <option key={am.id} value={am.id}>{am.full_name}</option>
-              ))}
-            </select>
-          </div>
-        )}
       </div>
 
       {/* Content */}
@@ -1123,26 +1009,6 @@ export default function ClientsPage({ myClientsOnly = false }) {
                         Sales eigenaar: <span className="font-semibold">{selectedClient.sales_owner_name}</span>
                       </p>
                     ) : null}
-                    {/* Account Manager */}
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs" style={{ color: '#7b859e' }}>Accountmanager:</span>
-                      {isDealer ? (
-                        <select
-                          value={selectedClient.accountManagerId || ''}
-                          onChange={e => handleAssignAccountManager(e.target.value)}
-                          disabled={assigningAM}
-                          className="text-xs rounded-lg px-2 py-1 border focus:outline-none focus:ring-1"
-                          style={{ borderColor: '#e8eaf2', color: '#f59e0b', fontWeight: 600, backgroundColor: '#fffbeb' }}>
-                          <option value=''>— Niet toegewezen —</option>
-                          {accountManagers.map(u => (
-                            <option key={u.id} value={u.id}>{u.full_name}</option>
-                          ))}
-                        </select>
-                      ) : selectedClient.accountManagerName ? (
-                        <span className="text-xs font-semibold" style={{ color: '#f59e0b' }}>{selectedClient.accountManagerName}</span>
-                      ) : <span className="text-xs" style={{ color: '#a4abbe' }}>—</span>}
-                      {assigningAM && <span className="text-[10px]" style={{ color: '#a4abbe' }}>Opslaan...</span>}
-                    </div>
                   </div>
                 </div>
                 <button onClick={() => setSelectedClient(null)} className="p-2 rounded-lg hover:bg-[#f3f4f8]">
@@ -1153,24 +1019,6 @@ export default function ClientsPage({ myClientsOnly = false }) {
               {/* Products & revenue summary */}
               {!loadingDetails && pd && (
                 <div className="flex gap-3 mb-4">
-                  {isDealer && (
-                    <div className="w-full flex gap-3 mb-1">
-                      <label className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-xl border border-[#e8eaf2] bg-white flex-1">
-                        <input type="checkbox" checked={!!pd.taperpay_active}
-                          onChange={e => toggleProduct('taperpay_active', e.target.checked)}
-                          className="accent-[#3d61a4] w-4 h-4" />
-                        <CreditCard size={12} style={{ color: '#3d61a4' }} />
-                        <span className="text-xs font-semibold" style={{ color: '#3d61a4' }}>TaperPay Actief</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-xl border border-[#e8eaf2] bg-white flex-1">
-                        <input type="checkbox" checked={!!pd.tapertrade_active}
-                          onChange={e => toggleProduct('tapertrade_active', e.target.checked)}
-                          className="accent-[#16a34a] w-4 h-4" />
-                        <TrendingUp size={12} style={{ color: '#16a34a' }} />
-                        <span className="text-xs font-semibold" style={{ color: '#16a34a' }}>TaperTrade Actief</span>
-                      </label>
-                    </div>
-                  )}
                   {pd.taperpay_active && (
                     <div className="flex-1 p-3 rounded-xl border border-[#e8eaf2]">
                       <div className="flex items-center gap-1.5 mb-1">
@@ -1216,7 +1064,12 @@ export default function ClientsPage({ myClientsOnly = false }) {
                   { key: 'tapertrade',      label: 'TaperTrade',   icon: Truck },
                   { key: 'forecasting',     label: 'Forecasting',  icon: TrendingUp },
                   { key: 'compliance',      label: 'Compliance',   icon: Shield },
-                ].map(tab => (
+                ].filter(tab => {
+                  // Tickets / compliance are hidden from sales & extern users
+                  if (tab.key !== 'compliance') return true;
+                  const r = currentUser?.role;
+                  return !(['sales', 'extern'].includes(r) && !currentUser?.is_teamleader);
+                }).map(tab => (
                   <button key={tab.key} onClick={() => setDetailTab(tab.key)}
                     className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
                       detailTab === tab.key ? 'bg-white shadow-sm' : 'hover:bg-white/50'
@@ -1822,28 +1675,6 @@ export default function ClientsPage({ myClientsOnly = false }) {
                     </div>
                     );
                   })()}
-
-                  {/* ═══ ACCOUNT PLAN SECTION ═══ */}
-                  {detailTab === 'forecasting' && (
-                    <div className="mt-6 border-t border-[#f3f4f8] pt-6">
-                      <div className="flex justify-between items-center mb-3">
-                        <h3 className="text-xs font-semibold uppercase" style={{ color: '#7b859e' }}>Account Plan</h3>
-                        <button onClick={saveAccountPlan} disabled={savingAccountPlan}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
-                          style={{ backgroundColor: '#3d61a4' }}>
-                          {savingAccountPlan ? 'Opslaan...' : 'Opslaan'}
-                        </button>
-                      </div>
-                      <textarea
-                        value={accountPlan}
-                        onChange={e => setAccountPlan(e.target.value)}
-                        rows={8}
-                        className="w-full border border-[#e8eaf2] rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d61a4] resize-y"
-                        placeholder="Schrijf hier het account plan voor deze klant... (strategie, doelen, acties, tijdlijn)"
-                        style={{ color: '#011745', backgroundColor: '#f7f8fc' }}
-                      />
-                    </div>
-                  )}
 
                   {/* ═══ COMPLIANCE TAB ═══ */}
                   {detailTab === 'compliance' && (
@@ -2540,7 +2371,6 @@ export default function ClientsPage({ myClientsOnly = false }) {
                           <button onClick={() => {
                             setEditingPricing('taperpay');
                             setPricingEdits({
-                              taperpay_active: pd?.taperpay_active ?? false,
                               fx_spot_spread_pct: pd?.fx_spot_spread_pct ?? '',
                               fx_forward_margin_pct: pd?.fx_forward_margin_pct ?? '',
                               credit_limit_eur: pd?.credit_limit_eur ?? '',
@@ -2557,16 +2387,6 @@ export default function ClientsPage({ myClientsOnly = false }) {
 
                       {editingPricing === 'taperpay' ? (
                         <div className="grid grid-cols-2 gap-4">
-                          <div className="col-span-2">
-                            <label className="flex items-center gap-3 cursor-pointer p-3 rounded-xl border border-[#e8eaf2] bg-[#f7f8fc]">
-                              <input type="checkbox"
-                                checked={!!pricingEdits.taperpay_active}
-                                onChange={e => setPricingEdits(p => ({ ...p, taperpay_active: e.target.checked }))}
-                                className="accent-[#3d61a4] w-4 h-4" />
-                              <span className="text-sm font-medium" style={{ color: '#011745' }}>TaperPay Actief</span>
-                              <span className="text-xs" style={{ color: '#7b859e' }}>Schakel in om TaperPay voor deze klant te activeren</span>
-                            </label>
-                          </div>
                           {[
                             { label: 'Spot Spread (%)', key: 'fx_spot_spread_pct', placeholder: '0.25' },
                             { label: 'Forward Margin (%)', key: 'fx_forward_margin_pct', placeholder: '0.35' },

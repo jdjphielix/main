@@ -145,17 +145,6 @@ export default function LeadDetailPopup({ lead, onClose, onUpdate }) {
   });
   const revSaveTimer = useRef(null);
 
-  // ─── Trade Finance Revenue state ──────────────────
-  const [tfRows, setTfRows] = useState(() => {
-    const saved = lead._raw?.tf_revenue_potential || lead.tf_revenue_potential;
-    return Array.isArray(saved) && saved.length > 0
-      ? saved
-      : [{ id: Date.now(), product: 'Factoring', bedrag: '', percentage: '1.5' }];
-  });
-  const tfSaveTimer = useRef(null);
-  const [fxLocked, setFxLocked] = useState(() => !!(lead._raw?.revenue_potential_locked || lead.revenue_potential_locked));
-  const [tfLocked, setTfLocked] = useState(() => !!(lead._raw?.tf_revenue_potential_locked || lead.tf_revenue_potential_locked));
-
   useEffect(() => {
     return () => {
       if (revSaveTimer.current) clearTimeout(revSaveTimer.current);
@@ -203,37 +192,6 @@ export default function LeadDetailPopup({ lead, onClose, onUpdate }) {
       }
     }, 800);
   }, [leadId]);
-
-  // Debounced auto-save for Trade Finance revenue rows
-  const saveTfRows = useCallback((rows) => {
-    if (tfSaveTimer.current) clearTimeout(tfSaveTimer.current);
-    tfSaveTimer.current = setTimeout(async () => {
-      try {
-        await api(`/api/v1/leads/${leadId}`, {
-          method: 'PUT',
-          body: JSON.stringify({ tf_revenue_potential: rows }),
-        });
-      } catch (err) {
-        showToast('Opslaan mislukt: ' + err.message, 'error');
-      }
-    }, 800);
-  }, [leadId]);
-
-  // Lock/save FX revenue section
-  const saveLockFx = async () => {
-    try {
-      await api(`/api/v1/leads/${leadId}`, { method: 'PUT', body: JSON.stringify({ revenue_potential: revRows, revenue_potential_locked: true }) });
-      setFxLocked(true);
-      showToast('FX Revenue opgeslagen en vergrendeld');
-    } catch (err) { showToast('Opslaan mislukt: ' + err.message, 'error'); }
-  };
-  const saveLockTf = async () => {
-    try {
-      await api(`/api/v1/leads/${leadId}`, { method: 'PUT', body: JSON.stringify({ tf_revenue_potential: tfRows, tf_revenue_potential_locked: true }) });
-      setTfLocked(true);
-      showToast('Trade Finance Revenue opgeslagen en vergrendeld');
-    } catch (err) { showToast('Opslaan mislukt: ' + err.message, 'error'); }
-  };
 
   // ─── Synced emails state ──────────────────────────
   const [syncedEmails, setSyncedEmails] = useState([]);
@@ -943,6 +901,7 @@ export default function LeadDetailPopup({ lead, onClose, onUpdate }) {
             { key: 'emails',       label: 'E-mails' },
             { key: 'gesprekken',   label: 'Gesprekken' },
             { key: 'notes',        label: 'Notities' },
+            { key: 'communicatie', label: 'Communicatie' },
             { key: 'documents',    label: 'Documenten' },
             { key: 'about',        label: 'Bedrijfsinfo' },
           ].map(tab => (
@@ -1249,18 +1208,12 @@ export default function LeadDetailPopup({ lead, onClose, onUpdate }) {
                   <div className="bg-[#f7f8fc] rounded-xl border border-[#e8eaf2] overflow-hidden">
                     {/* Header */}
                     <div className="px-5 py-3 bg-[#011745] flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-semibold text-white tracking-wide">Revenue Potentie FX</h3>
-                        {fxLocked && <span className="text-[10px] bg-amber-400/20 text-amber-300 px-2 py-0.5 rounded-full font-medium flex items-center gap-1"><Lock size={9}/> Vergrendeld</span>}
-                      </div>
-                      {fxLocked
-                        ? <button onClick={() => setFxLocked(false)} className="text-[11px] text-[#5a7fc2] hover:text-white transition-colors">Bewerken</button>
-                        : <button onClick={saveLockFx} className="text-[11px] bg-[#3d61a4] hover:bg-[#5a7fc2] text-white px-3 py-1 rounded-lg font-medium transition-colors">Opslaan</button>
-                      }
+                      <h3 className="text-sm font-semibold text-white tracking-wide">Revenue Potentie</h3>
+                      <span className="text-xs text-[#5a7fc2]">Auto-opgeslagen</span>
                     </div>
 
                     {/* Table */}
-                    <div className="p-4 space-y-2" style={{ opacity: fxLocked ? 0.7 : 1, pointerEvents: fxLocked ? 'none' : 'auto' }}>
+                    <div className="p-4 space-y-2">
                       {/* Column headers */}
                       <div
                         className="grid gap-2 text-[10px] font-semibold text-[#a4abbe] uppercase tracking-wider px-1"
@@ -1371,70 +1324,6 @@ export default function LeadDetailPopup({ lead, onClose, onUpdate }) {
                   </div>
                 );
               })()}
-
-              {/* ═══ TRADE FINANCE REVENUE POTENTIE ═══ */}
-              <div className="mt-4">
-              {(() => {
-                const TF_PRODUCTS = ['Factoring','Portfolio-gebaseerde lening','Structured Commodity Finance','Debtor Finance (Non-Recourse)','Overig'];
-                const updateTfRow = (id, field, value) => { const updated = tfRows.map(r => r.id === id ? { ...r, [field]: value } : r); setTfRows(updated); saveTfRows(updated); };
-                const addTfRow = () => { const updated = [...tfRows, { id: Date.now(), product: 'Factoring', bedrag: '', percentage: '1.5' }]; setTfRows(updated); saveTfRows(updated); };
-                const removeTfRow = (id) => { const updated = tfRows.filter(r => r.id !== id); const final = updated.length > 0 ? updated : [{ id: Date.now(), product: 'Factoring', bedrag: '', percentage: '1.5' }]; setTfRows(final); saveTfRows(final); };
-                const calcTf = (row) => (parseFloat(row.bedrag)||0) * (parseFloat(row.percentage)||0) / 100;
-                const totalTf = tfRows.reduce((sum, r) => sum + calcTf(r), 0);
-                const fmtE = (n) => new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
-                return (
-                  <div className="bg-[#f7f8fc] rounded-xl border border-[#e8eaf2] overflow-hidden">
-                    <div className="px-5 py-3 flex items-center justify-between" style={{ backgroundColor: '#14532d' }}>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-semibold text-white tracking-wide">Revenue Potentie Trade Finance</h3>
-                        {tfLocked && <span className="text-[10px] bg-green-400/20 text-green-300 px-2 py-0.5 rounded-full font-medium flex items-center gap-1"><Lock size={9}/> Vergrendeld</span>}
-                      </div>
-                      {tfLocked
-                        ? <button onClick={() => setTfLocked(false)} className="text-[11px] text-green-300 hover:text-white transition-colors">Bewerken</button>
-                        : <button onClick={saveLockTf} className="text-[11px] bg-green-700 hover:bg-green-600 text-white px-3 py-1 rounded-lg font-medium transition-colors">Opslaan</button>
-                      }
-                    </div>
-                    <div className="p-4 space-y-2" style={{ opacity: tfLocked ? 0.7 : 1, pointerEvents: tfLocked ? 'none' : 'auto' }}>
-                      <div className="grid gap-2 text-[10px] font-semibold text-[#a4abbe] uppercase tracking-wider px-1" style={{ gridTemplateColumns: '2.5fr 1.5fr 1.5fr 1.5fr 28px' }}>
-                        <span>Product</span><span>Financieringsbehoefte</span><span>Marge %</span><span>Potentie</span><span></span>
-                      </div>
-                      {tfRows.map((row) => {
-                        const rev = calcTf(row);
-                        return (
-                          <div key={row.id} className="grid gap-2 items-center" style={{ gridTemplateColumns: '2.5fr 1.5fr 1.5fr 1.5fr 28px' }}>
-                            <select value={row.product} onChange={e => updateTfRow(row.id, 'product', e.target.value)}
-                              className="w-full px-2 py-1.5 rounded-lg border border-[#cdd1e0] text-xs focus:outline-none bg-white">
-                              {TF_PRODUCTS.map(p => <option key={p} value={p}>{p}</option>)}
-                            </select>
-                            <input type="number" value={row.bedrag} onChange={e => updateTfRow(row.id, 'bedrag', e.target.value)} onBlur={() => saveTfRows(tfRows)}
-                              placeholder="0" min="0" className="w-full px-2 py-1.5 rounded-lg border border-[#cdd1e0] text-xs focus:outline-none bg-white" />
-                            <div className="relative">
-                              <input type="number" value={row.percentage} onChange={e => updateTfRow(row.id, 'percentage', e.target.value)} onBlur={() => saveTfRows(tfRows)}
-                                placeholder="1.5" step="0.1" min="0" className="w-full pl-2 pr-5 py-1.5 rounded-lg border border-[#cdd1e0] text-xs focus:outline-none bg-white" />
-                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[#a4abbe]">%</span>
-                            </div>
-                            <div className="px-2 py-1.5 rounded-lg text-xs font-semibold text-right" style={{ backgroundColor: '#f0fdf4', border: '1px solid rgba(20,83,45,0.2)', color: '#14532d' }}>
-                              {rev > 0 ? fmtE(rev) : '—'}
-                            </div>
-                            <button onClick={() => removeTfRow(row.id)} className="flex items-center justify-center w-7 h-7 rounded-lg text-[#a4abbe] hover:text-[#ff642e] hover:bg-red-50 transition-colors">
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        );
-                      })}
-                      <button onClick={addTfRow} className="flex items-center gap-1.5 text-xs font-medium mt-1 px-1" style={{ color: '#14532d' }}>
-                        <Plus size={13} /> Rij toevoegen
-                      </button>
-                    </div>
-                    <div className="px-5 py-3 border-t flex items-center justify-between" style={{ backgroundColor: '#f0fdf4', borderColor: 'rgba(20,83,45,0.2)' }}>
-                      <span className="text-xs font-semibold text-[#566079] uppercase tracking-wider">Totale Revenue Potentie TF</span>
-                      <span className="text-lg font-bold" style={{ color: '#14532d' }}>{totalTf > 0 ? fmtE(totalTf) : '—'}</span>
-                    </div>
-                  </div>
-                );
-              })()}
-              </div>
-
             </div>
           )}
 
@@ -1450,46 +1339,6 @@ export default function LeadDetailPopup({ lead, onClose, onUpdate }) {
                   <Plus size={16} /> Toevoegen
                 </button>
               </div>
-
-              {/* Primair contact (ingevuld bij aanmaak) */}
-              {(lead.contact_name || lead.contactName || lead._raw?.contact_name || lead.contact_email || lead.email || lead.contact_phone || lead.phone) && (
-                <div className="bg-[#eef2fa] rounded-xl border border-[#3d61a4]/20 p-4 mb-1">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-8 h-8 rounded-full bg-[#3d61a4] flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
-                      {(lead.contact_name || lead.contactName || lead._raw?.contact_name) ? (lead.contact_name || lead.contactName || lead._raw?.contact_name).charAt(0).toUpperCase() : '?'}
-                    </div>
-                    <div>
-                      <span className="text-sm font-semibold text-[#011745]">{lead.contact_name || lead.contactName || lead._raw?.contact_name || 'Onbekend'}</span>
-                      {lead.contact_position && (
-                        <span className="ml-2 text-xs text-[#566079]">{lead.contact_position}</span>
-                      )}
-                    </div>
-                    <span className="ml-auto text-[10px] bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
-                      <Star size={9} className="fill-amber-500" /> Primair
-                    </span>
-                  </div>
-                  <div className="space-y-1.5 pl-10">
-                    {(lead.contact_email || lead.email || lead._raw?.contact_email) && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">✉</span>
-                        <a href={`mailto:${lead.contact_email || lead.email || lead._raw?.contact_email}`} className="text-sm text-[#3d61a4] hover:underline truncate">{lead.contact_email || lead.email || lead._raw?.contact_email}</a>
-                      </div>
-                    )}
-                    {(lead.contact_phone || lead.phone || lead._raw?.contact_phone) && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">📞</span>
-                        <a href={`tel:${lead.contact_phone || lead.phone || lead._raw?.contact_phone}`} className="text-sm text-[#566079] hover:underline">{lead.contact_phone || lead.phone || lead._raw?.contact_phone}</a>
-                      </div>
-                    )}
-                    {(lead.contact_mobile || lead.mobile || lead._raw?.contact_mobile) && (lead.contact_mobile || lead.mobile || lead._raw?.contact_mobile) !== (lead.contact_phone || lead.phone) && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">📱</span>
-                        <a href={`tel:${lead.contact_mobile || lead.mobile || lead._raw?.contact_mobile}`} className="text-sm text-[#566079] hover:underline">{lead.contact_mobile || lead.mobile || lead._raw?.contact_mobile}</a>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
 
               {/* Add contact form */}
               {showAddContact && (
@@ -2149,47 +1998,6 @@ export default function LeadDetailPopup({ lead, onClose, onUpdate }) {
                   <Phone size={18} /> Start Gesprek Timer
                 </button>
               )}
-
-              {/* ─── Communicatie Log ─── */}
-              <div className="border-t border-[#e8eaf2] pt-6 space-y-4">
-                <h3 className="text-sm font-semibold text-[#566079] uppercase tracking-wider">Communicatie Log</h3>
-                <div className="space-y-3">
-                  <textarea
-                    value={newComm}
-                    onChange={e => setNewComm(e.target.value)}
-                    placeholder="Log een communicatie (telefoongesprek, email, meeting, etc.)..."
-                    className="w-full px-4 py-3 bg-[#f7f8fc] rounded-lg border border-[#e8eaf2] focus:border-[#3d61a4] focus:outline-none focus:ring-2 focus:ring-[#eef2fa] text-[#566079] placeholder-[#a4abbe] resize-none h-24"
-                  />
-                  <button
-                    onClick={handleAddComm}
-                    disabled={!newComm.trim() || loading.addComm}
-                    className="px-4 py-2 bg-[#3d61a4] hover:bg-[#0a2d6b] text-white rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
-                  >
-                    {loading.addComm ? 'Opslaan...' : 'Communicatie Loggen'}
-                  </button>
-                </div>
-                {commsLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 size={24} className="animate-spin text-[#3d61a4]" />
-                  </div>
-                ) : communications.length > 0 ? (
-                  <div className="space-y-3">
-                    {communications.map(comm => (
-                      <div key={comm.id} className="bg-[#f7f8fc] rounded-lg p-4 border border-[#e8eaf2]">
-                        <p className="text-sm text-[#011745]">{comm.content}</p>
-                        <div className="flex items-center gap-2 mt-2">
-                          <p className="text-xs text-[#a4abbe]">
-                            {comm.created_at ? new Date(comm.created_at).toLocaleString('nl-NL') : ''}
-                          </p>
-                          {comm.user_name && <span className="text-xs text-[#7b859e]">• {comm.user_name}</span>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[#7b859e] text-sm">Nog geen communicatie gelogd</p>
-                )}
-              </div>
             </div>
           )}
 
@@ -2277,8 +2085,8 @@ export default function LeadDetailPopup({ lead, onClose, onUpdate }) {
             </div>
           )}
 
-          {/* ═══ COMMUNICATIE (merged into Gesprekken) ═══ */}
-          {false && (
+          {/* ═══ COMMUNICATIE ═══ */}
+          {activeTab === 'communicatie' && (
             <div className="p-8 space-y-6">
               <div className="space-y-3">
                 <textarea
@@ -2412,8 +2220,8 @@ export default function LeadDetailPopup({ lead, onClose, onUpdate }) {
                         : 'linear-gradient(135deg, #7f1d1d 0%, #b91c1c 100%)'
                     }}>
                       <div className="w-14 h-14 rounded-xl flex flex-col items-center justify-center bg-white/15 flex-shrink-0">
-                        <span className="text-2xl font-bold text-white leading-none">{enrichment.fit_score}</span>
-                        <span className="text-[9px] text-white/70 font-medium">/10</span>
+                        <span className="text-2xl font-bold text-white leading-none">{Math.round(enrichment.fit_score * 10)}</span>
+                        <span className="text-[9px] text-white/70 font-medium">/100</span>
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold text-white/70 uppercase tracking-wider mb-0.5">Taper Fit Score</p>

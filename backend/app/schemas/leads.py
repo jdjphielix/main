@@ -9,33 +9,17 @@ class LeadCreate(BaseModel):
     company_name: str
     company_website: Optional[str] = None
     company_country: Optional[str] = None
-    country: Optional[str] = None
     company_industry: Optional[str] = None
     company_size: Optional[str] = None
     kvk_number: Optional[str] = None
     linkedin_url: Optional[str] = None
     contact_name: Optional[str] = None
-    contact_person: Optional[str] = None
     contact_email: Optional[str] = None
-    email: Optional[str] = None
     contact_phone: Optional[str] = None
-    phone: Optional[str] = None
     contact_mobile: Optional[str] = None
     contact_position: Optional[str] = None
     priority: Optional[str] = "cold"
     partner_name: Optional[str] = None
-    status: Optional[str] = None
-    source: Optional[str] = None
-    manual_score: Optional[int] = None
-    company_description: Optional[str] = None
-    address_street: Optional[str] = None
-    address_city: Optional[str] = None
-    address_postcode: Optional[str] = None
-    vat_number: Optional[str] = None
-    client_iban: Optional[str] = None
-    communication_preference: Optional[str] = None
-    onboarding_checklist: Optional[dict] = None
-    revenue_potential: Optional[list] = None
 
 
 class LeadUpdate(BaseModel):
@@ -53,6 +37,9 @@ class LeadUpdate(BaseModel):
     priority: Optional[str] = None
     pipeline_stage: Optional[str] = None
     onboarding_checklist: Optional[dict] = None
+    revenue_potential: Optional[list] = None
+    kvk_number: Optional[str] = None
+    linkedin_url: Optional[str] = None
     partner_name: Optional[str] = None
     vat_number: Optional[str] = None
     client_iban: Optional[str] = None
@@ -62,10 +49,6 @@ class LeadUpdate(BaseModel):
     communication_preference: Optional[str] = None
     churn_reason: Optional[str] = None
     churn_to_competitor: Optional[str] = None
-    revenue_potential: Optional[list] = None
-    manual_score: Optional[int] = None
-    source: Optional[str] = None
-    company_description: Optional[str] = None
 
 
 class LeadResponse(BaseModel):
@@ -101,6 +84,7 @@ class LeadResponse(BaseModel):
     source: Optional[str] = None
     partner_name: Optional[str] = None
     onboarding_checklist: Optional[dict] = None
+    revenue_potential: Optional[list] = None
     vat_number: Optional[str] = None
     client_iban: Optional[str] = None
     address_street: Optional[str] = None
@@ -115,23 +99,8 @@ class LeadResponse(BaseModel):
     churn_reason: Optional[str] = None
     churn_date: Optional[datetime] = None
     churn_to_competitor: Optional[str] = None
-    revenue_potential: Optional[list] = None
-    contact_person: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-
-    account_manager_id: Optional[int] = None
-    account_manager_name: Optional[str] = None
-    is_hot_prospect: bool = False
-    revenue_approved: bool = False
-    revenue_approved_by: Optional[int] = None
-    revenue_approved_at: Optional[datetime] = None
-    revenue_approved_value: Optional[float] = None
-    revenue_approved_note: Optional[str] = None
-    snoozed_until: Optional[datetime] = None
-    snooze_reason: Optional[str] = None
-    tf_revenue_potential: Optional[float] = None
-    is_pinned: bool = False
 
     class Config:
         from_attributes = True

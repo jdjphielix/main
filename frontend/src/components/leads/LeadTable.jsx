@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronUp, ChevronDown, Pin, Phone, Check, X } from 'lucide-react';
 
 /** Deterministic color per partner name — same name always same color */
@@ -43,12 +44,36 @@ export default function LeadTable({
   const [sortBy, setSortBy] = useState('company');
   const [sortOrder, setSortOrder] = useState('asc');
   const [openStatusId, setOpenStatusId] = useState(null);
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
 
   useEffect(() => {
     const close = () => setOpenStatusId(null);
-    if (openStatusId !== null) document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
+    if (openStatusId !== null) {
+      document.addEventListener('click', close);
+      // Close on scroll/resize so the fixed-position menu never floats detached
+      window.addEventListener('scroll', close, true);
+      window.addEventListener('resize', close);
+    }
+    return () => {
+      document.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
   }, [openStatusId]);
+
+  // Open the status menu, positioning it (fixed) below/above the clicked button
+  const openStatusMenu = (e, leadId) => {
+    if (openStatusId === leadId) { setOpenStatusId(null); return; }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const MENU_HEIGHT = 330;
+    const below = rect.bottom + 4;
+    const flipUp = below + MENU_HEIGHT > window.innerHeight;
+    setMenuPos({
+      top: flipUp ? Math.max(8, rect.top - MENU_HEIGHT - 4) : below,
+      left: Math.min(rect.left, window.innerWidth - 240),
+    });
+    setOpenStatusId(leadId);
+  };
 
   const handleSort = (column) => {
     if (sortBy === column) {
@@ -133,7 +158,7 @@ export default function LeadTable({
       )}
 
       {/* Table */}
-      <div className="overflow-x-auto" style={{ overflowY: "visible" }}>
+      <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="bg-[#f7f8fc] border-b border-[#e8eaf2]">
@@ -175,19 +200,9 @@ export default function LeadTable({
               >
                 {/* Bedrijf */}
                 <td className="px-6 py-4">
-                  <div className="flex items-center gap-1.5">
-                    <p className="font-medium text-[#011745] hover:text-[#3d61a4] transition-colors">
-                      {lead.company}
-                    </p>
-                    {lead.revisionStatus && (
-                      <span
-                        title={lead.revisionNote || 'Teruggestuurd door backoffice'}
-                        className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold"
-                        style={{ backgroundColor: lead.revisionStatus === 'rejected' ? '#dc2626' : '#f97316' }}>
-                        !
-                      </span>
-                    )}
-                  </div>
+                  <p className="font-medium text-[#011745] hover:text-[#3d61a4] transition-colors">
+                    {lead.company}
+                  </p>
                   <p className="text-xs text-[#a4abbe]">{lead.country}</p>
                   {lead.partnerName && (() => {
                     const pc = partnerColor(lead.partnerName);
@@ -225,7 +240,7 @@ export default function LeadTable({
                 <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
                   <div className="relative inline-block">
                     <button
-                      onClick={() => setOpenStatusId(openStatusId === lead.id ? null : lead.id)}
+                      onClick={(e) => openStatusMenu(e, lead.id)}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-white text-xs font-semibold transition-all hover:opacity-90 active:scale-95"
                       style={{ backgroundColor: statusColors[lead.status] || '#3d61a4' }}
                     >
@@ -233,10 +248,14 @@ export default function LeadTable({
                       <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="6 9 12 15 18 9"/></svg>
                     </button>
 
-                    {openStatusId === lead.id && (
+                    {openStatusId === lead.id && createPortal((
                       <div
-                        className="absolute top-10 left-0 z-50 bg-white rounded-2xl overflow-hidden"
+                        className="bg-white rounded-2xl overflow-hidden"
                         style={{
+                          position: 'fixed',
+                          top: menuPos.top,
+                          left: menuPos.left,
+                          zIndex: 1000,
                           minWidth: '220px',
                           border: '1px solid #e8eaf2',
                           boxShadow: '0 8px 32px rgba(1,23,69,0.14), 0 2px 8px rgba(1,23,69,0.08)',
@@ -310,7 +329,7 @@ export default function LeadTable({
                           )}
                         </div>
                       </div>
-                    )}
+                    ), document.body)}
                   </div>
                 </td>
 
@@ -356,7 +375,7 @@ export default function LeadTable({
                         />
                       </svg>
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-xs font-bold text-[#011745]">{Math.round(lead.score / 10)}/10</span>
+                        <span className="text-xs font-bold text-[#011745]">{lead.score}</span>
                       </div>
                     </div>
                   </div>

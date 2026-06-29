@@ -35,7 +35,6 @@ async def get_leads(
     assigned_to: Optional[int] = None,
     is_on_daily_list: Optional[bool] = None,
     pipeline_stage: Optional[str] = None,
-    account_manager_id: Optional[int] = None,
     my_leads: Optional[bool] = None,
     my_clients: Optional[bool] = None,
     all_stages: Optional[bool] = None,
@@ -116,10 +115,6 @@ async def get_leads(
 
     # Sales ownership filter: sales/extern users only see their own leads in onboarding/client
     is_sales_only = current_user.role in ("sales", "extern") and not current_user.is_teamleader
-    is_accountmanager = current_user.role == "accountmanager"
-    if is_accountmanager and not account_manager_id:
-        # Accountmanagers only see their own assigned clients
-        query = query.filter(Lead.account_manager_id == current_user.id)
     if is_sales_only and pipeline_stage in ("prospect", "onboarding_sales", "onboarding_backoffice", "client"):
         from sqlalchemy import or_ as _or2_
         query = query.filter(_or2_(
@@ -127,10 +122,6 @@ async def get_leads(
             Lead.assigned_user_id == current_user.id,
             Lead.dealer_id == current_user.id,
         ))
-
-    # Account manager filter
-    if account_manager_id:
-        query = query.filter(Lead.account_manager_id == account_manager_id)
 
     # Filter snoozed leads (hide if snooze not expired)
     query = query.filter(or_(
@@ -154,13 +145,7 @@ async def get_leads(
         query = query.order_by(sort_column.desc())
 
     # Eager load owner relations for name resolution
-    # Load relationships for serialization
-    from app.models.user import User as _User
-    query = query.options(
-        joinedload(Lead.sales_owner),
-        joinedload(Lead.assigned_user),
-        joinedload(Lead.account_manager),
-    )
+    query = query.options(joinedload(Lead.sales_owner), joinedload(Lead.assigned_user))
 
     # Pagination
     leads = query.offset((page - 1) * page_size).limit(page_size).all()
@@ -273,28 +258,19 @@ async def create_lead(
             }
         )
 
-    _lead_dump = lead_data.model_dump()
-    _source = _lead_dump.pop('source', None) or 'manual'
-    for _alias, _target in [('country','company_country'),('contact_person','contact_name'),('email','contact_email'),('phone','contact_phone')]:
-        _v = _lead_dump.pop(_alias, None)
-        if _v and not _lead_dump.get(_target): _lead_dump[_target] = _v
-    # Auto-set sales_owner_id for ALL roles so new leads always appear in 'Mijn Leads'
-    _auto_owner_id = current_user.id
-
     lead = Lead(
-        **_lead_dump,
+        **lead_data.model_dump(),
         assigned_user_id=current_user.id,
-        sales_owner_id=_lead_dump.get('sales_owner_id') or _auto_owner_id,
-        source=_source,
+        # Auto-lock to the creator so the lead appears directly in their "Mijn Leads"
+        # tab (which filters on is_locked + locked_by_user_id) without needing to claim it.
+        is_locked=True,
+        locked_by_user_id=current_user.id,
+        sales_owner_id=current_user.id,
+        source="manual",
     )
     db.add(lead)
     db.commit()
     db.refresh(lead)
-
-    # Auto-lock new lead for creator so it appears in "Mijn Leads"
-    lead.is_locked = True
-    lead.locked_by_user_id = current_user.id
-    db.commit()
 
     # Activity log
     db.add(ActivityLog(
@@ -344,31 +320,10 @@ async def update_lead(
         if key in _json_fields:
             flag_modified(lead, key)
 
-    # Security: onboarding_backoffice and client transitions require backoffice/admin role
-    if 'pipeline_stage' in update_data:
-        _restricted_stages = ('onboarding_backoffice', 'client')
-        if update_data['pipeline_stage'] in _restricted_stages:
-            _has_role = current_user.role in ('backoffice', 'admin_pay', 'admin_trade') or current_user.is_teamleader
-            if not _has_role:
-                raise HTTPException(status_code=403, detail="Gebruik de dedicated transition endpoints voor deze stap")
-
     # Auto-set first_contacted_at when status changes to contacted
     if 'status' in update_data and update_data['status'] == 'contacted' and not lead.first_contacted_at:
         lead.first_contacted_at = datetime.now(timezone.utc)
     # Auto-set churn_date when pipeline moves to LOST
-
-    # Auto-set timestamps bij pipeline-overgang
-    if 'pipeline_stage' in update_data:
-        _ns = update_data['pipeline_stage']
-        _now = datetime.now(timezone.utc)
-        if _ns == 'prospect' and not lead.prospect_since:
-            lead.prospect_since = _now
-        elif _ns == 'onboarding_sales' and not lead.onboarding_started_at:
-            lead.onboarding_started_at = _now
-        elif _ns == 'onboarding_backoffice' and not lead.backoffice_started_at:
-            lead.backoffice_started_at = _now
-        elif _ns == 'client' and not lead.client_since_date:
-            lead.client_since_date = _now
     if 'pipeline_stage' in update_data and update_data['pipeline_stage'] == 'lost' and not lead.churn_date:
         lead.churn_date = datetime.now(timezone.utc)
 
@@ -392,7 +347,7 @@ async def add_to_daily_list(
     db: Session = Depends(get_db),
 ):
     """Add lead to today's call list (1-click)."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -410,7 +365,7 @@ async def remove_from_daily_list(
     db: Session = Depends(get_db),
 ):
     """Remove lead from today's call list."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -429,7 +384,7 @@ async def update_daily_list_position(
     db: Session = Depends(get_db),
 ):
     """Update lead position in daily call list (drag & drop)."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -445,7 +400,7 @@ async def lock_lead(
     db: Session = Depends(get_db),
 ):
     """Lock lead to current user's own list."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -457,13 +412,7 @@ async def lock_lead(
     lead.assigned_user_id = current_user.id
     lead.sales_owner_id = current_user.id  # Permanent sales owner — persists through pipeline
     db.commit()
-    return {
-        "status": "locked",
-        "id": lead.id,
-        "locked_by_user_id": lead.locked_by_user_id,
-        "sales_owner_id": lead.sales_owner_id,
-        "assigned_user_id": lead.assigned_user_id,
-    }
+    return {"status": "locked"}
 
 
 @router.post("/{lead_id}/unlock")
@@ -473,7 +422,7 @@ async def unlock_lead(
     db: Session = Depends(get_db),
 ):
     """Unlock lead from user's list."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -495,7 +444,7 @@ async def snooze_lead(
     db: Session = Depends(get_db),
 ):
     """Snooze lead until a specific date."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -545,19 +494,13 @@ async def send_to_prospect(
     db: Session = Depends(get_db),
 ):
     """Move lead to prospect stage."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
     lead.pipeline_stage = PipelineStage.PROSPECT.value
     lead.status = LeadStatus.CONVERTED.value
     lead.prospect_since = datetime.now(timezone.utc)
-    # Auto-assign prospect to the sales user who converts it
-    if current_user.role in ("sales", "extern") or (
-        not current_user.role in ("admin_pay", "admin_trade", "backoffice", "finance")
-        and not current_user.is_teamleader
-    ):
-        lead.sales_owner_id = current_user.id
 
     # Create prospect data (get-or-create to avoid duplicates on repeated calls)
     prospect_data = db.query(ProspectData).filter(ProspectData.lead_id == lead.id).first()
@@ -581,10 +524,7 @@ async def send_to_onboarding_backoffice(
     db: Session = Depends(get_db),
 ):
     """Move lead from onboarding_sales to onboarding_backoffice."""
-    # Role check: only backoffice/admin/teamleader can advance to backoffice phase
-    if current_user.role not in ("backoffice", "admin_pay", "admin_trade") and not current_user.is_teamleader:
-        raise HTTPException(status_code=403, detail="Alleen backoffice/admin kan dit uitvoeren")
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -616,7 +556,7 @@ async def send_back_to_onboarding_sales(
         "revision_status": str (needs_refactor | needs_clarification | rejected)
     }
     """
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -663,10 +603,7 @@ async def send_to_client(
     db: Session = Depends(get_db),
 ):
     """Move lead from onboarding_backoffice to client."""
-    # Role check: only backoffice/admin/teamleader can finalize client
-    if current_user.role not in ("backoffice", "admin_pay", "admin_trade") and not current_user.is_teamleader:
-        raise HTTPException(status_code=403, detail="Alleen backoffice/admin kan een client finaliseren")
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -690,7 +627,7 @@ async def update_score(
     db: Session = Depends(get_db),
 ):
     """Update manual lead score."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -709,7 +646,7 @@ async def soft_delete_lead(
     """Soft-delete a lead (admin only)."""
     if current_user.role not in ("admin_pay", "admin_trade") and not current_user.is_teamleader:
         raise HTTPException(status_code=403, detail="Alleen admins kunnen leads verwijderen")
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -829,51 +766,6 @@ async def unpin_lead(
 
 # --- Notes ---
 
-
-@router.post("/{lead_id}/call-log")
-async def log_call(
-    lead_id: int,
-    data: dict,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Log a phone call for a lead. Creates a ConversationLog entry of type 'phone'."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead niet gevonden")
-
-    from app.models.communication import ConversationLog
-    from datetime import datetime, timezone
-
-    log = ConversationLog(
-        lead_id=lead_id,
-        user_id=current_user.id,
-        type="phone",
-        direction=data.get("direction", "outbound"),
-        outcome=data.get("outcome", "reached"),
-        duration_seconds=data.get("duration", data.get("duration_seconds", 0)),
-        summary=data.get("notes", data.get("summary", "")),
-        occurred_at=datetime.now(timezone.utc),
-    )
-    db.add(log)
-
-    # Update lead last activity
-    lead.last_activity_at = datetime.now(timezone.utc)
-
-    db.commit()
-    db.refresh(log)
-
-    return {
-        "id": log.id,
-        "lead_id": log.lead_id,
-        "type": log.type,
-        "outcome": log.outcome,
-        "duration_seconds": log.duration_seconds,
-        "summary": log.summary,
-        "occurred_at": log.occurred_at.isoformat(),
-        "user_id": log.user_id,
-    }
-
 @router.get("/{lead_id}/notes")
 async def get_lead_notes(
     lead_id: int,
@@ -908,7 +800,7 @@ async def add_lead_note(
     db: Session = Depends(get_db),
 ):
     """Add a note to a lead."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -1008,7 +900,7 @@ async def add_lead_communication(
     db: Session = Depends(get_db),
 ):
     """Add a communication entry to a lead."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -1128,7 +1020,7 @@ async def get_client_forecasting(
     db: Session = Depends(get_db),
 ):
     """Get all annual forecasting items + individual deals for a client."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -1175,7 +1067,7 @@ async def add_forecasting_item(
     db: Session = Depends(get_db),
 ):
     """Add a new annual forecasting currency pair."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -1288,7 +1180,7 @@ async def add_client_deal(
     db: Session = Depends(get_db),
 ):
     """Add an individual booked deal."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -1381,7 +1273,7 @@ async def create_compliance_case(
     db: Session = Depends(get_db),
 ):
     """Create a new compliance case for a client."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -1473,7 +1365,7 @@ async def get_client_correspondence(
     db: Session = Depends(get_db),
 ):
     """Get full correspondence history: emails, notes, communications, call logs."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -1675,7 +1567,7 @@ async def assign_sales_user(
     db: Session = Depends(get_db),
 ):
     """Assign a sales user (and optionally dealer) to a lead. Backoffice use."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -1689,25 +1581,3 @@ async def assign_sales_user(
         lead.dealer_id = data["dealer_id"]
     db.commit()
     return {"status": "ok"}
-
-
-@router.post("/{lead_id}/assign-account-manager")
-async def assign_account_manager(
-    lead_id: int,
-    data: dict,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Assign an accountmanager to a client."""
-    # Allow admin, teamleader, and backoffice to assign account managers
-    is_allowed = current_user.role in ("admin_pay", "admin_trade", "backoffice") or current_user.is_teamleader
-    if not is_allowed:
-        raise HTTPException(status_code=403, detail="Only admins/teamleaders/backoffice can assign account managers")
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-    manager_id = data.get("account_manager_id")
-    lead.account_manager_id = manager_id if manager_id else None
-    db.commit()
-    db.refresh(lead)
-    return {"status": "ok", "account_manager_id": lead.account_manager_id}

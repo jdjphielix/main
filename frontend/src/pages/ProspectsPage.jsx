@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Search, Plus, Filter, Download, LayoutGrid, List as ListIcon, X, Phone, RefreshCw, Loader2, User, Flame } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { useSearchParams } from 'react-router-dom';
+import { Search, Plus, Filter, Download, LayoutGrid, List as ListIcon, X, Phone, RefreshCw, Loader2, User } from 'lucide-react';
 import ProspectTable from '../components/prospects/ProspectTable';
 import ProspectKanban from '../components/prospects/ProspectKanban';
 import ProspectDetailPopup from '../components/prospects/ProspectDetailPopup';
+import { useAuth } from '../contexts/AuthContext';
 
 /* ─── API field mapping ─── */
 function mapApiProspect(api) {
@@ -29,10 +30,7 @@ function mapApiProspect(api) {
     fxVolume: pd.fx_estimated_volume || 0,
     tfVolume: pd.tf_estimated_volume || 0,
     revenuePotential: (pd.fx_estimated_revenue || 0) + (pd.tf_estimated_revenue || 0),
-    isHot: api.is_hot_prospect || false,
     onCallList: api.on_daily_list || false,
-    salesOwnerId: api.sales_owner_id || null,
-    salesOwnerName: api.sales_owner_name || null,
     notes: [],
     documents: [],
     fxDetails: pd.fx_estimated_volume ? {
@@ -100,17 +98,35 @@ function reverseMapStatus(uiStatus) {
 export default function ProspectsPage() {
   const { user } = useAuth();
   const isSalesOnly = user && ['sales', 'extern'].includes(user.role) && !user.is_teamleader;
-  const isExtern = user?.role === 'extern' && !user?.is_teamleader;
   const [viewMode, setViewMode] = useState('list');
-  const [listTab, setListTab] = useState('algemeen');
-  // Extern users only see their own prospects
-  useEffect(() => { if (isExtern) setListTab('mijn'); }, [isExtern]);
   const [selectedProspect, setSelectedProspect] = useState(null);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [prospects, setProspects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Open a specific prospect when navigated to with ?open=<leadId> (e.g. from the callback agenda)
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const openId = searchParams.get('open');
+    if (!openId) return;
+    (async () => {
+      try {
+        const token = sessionStorage.getItem('auth_token');
+        const resp = await fetch(`/api/v1/prospects/${openId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          setSelectedProspect(mapApiProspect(data));
+        }
+      } catch { /* ignore */ }
+      searchParams.delete('open');
+      setSearchParams(searchParams, { replace: true });
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
   const [filters, setFilters] = useState({
     status: [],
     priority: [],
@@ -128,14 +144,6 @@ export default function ProspectsPage() {
       if (searchQuery) params.set('search', searchQuery);
       if (filters.taperPayActive !== null) params.set('taperpay', String(filters.taperPayActive));
       if (filters.taperTradeActive !== null) params.set('tapertrade', String(filters.taperTradeActive));
-      // mine param: extern=always own, others=tab-based
-      if (isExtern) {
-        params.set('mine', 'true');
-      } else if (listTab === 'mijn') {
-        params.set('mine', 'true');
-      } else if (listTab === 'algemeen' && !isSalesOnly) {
-        params.set('mine', 'false');
-      }
 
       const res = await fetch(`/api/v1/prospects/?${params}`, {
         headers: { Authorization: `Bearer ${getToken()}` },
@@ -150,11 +158,11 @@ export default function ProspectsPage() {
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, filters.taperPayActive, filters.taperTradeActive, listTab, isSalesOnly]);
+  }, [searchQuery, filters.taperPayActive, filters.taperTradeActive]);
 
   useEffect(() => {
     fetchProspects();
-  }, [fetchProspects, listTab]);
+  }, [fetchProspects]);
 
   // Debounce search
   const [searchTimer, setSearchTimer] = useState(null);
@@ -164,23 +172,6 @@ export default function ProspectsPage() {
     if (searchTimer) clearTimeout(searchTimer);
     // search triggers via useEffect/fetchProspects dependency
   }
-
-  // Hot toggle
-  const toggleHot = async (prospectId) => {
-    try {
-      const res = await fetch(`/api/v1/prospects/${prospectId}/hot`, {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setProspects(prev => prev.map(p => p.id === String(prospectId)
-          ? { ...p, isHot: data.is_hot_prospect, _raw: {...p._raw, is_hot_prospect: data.is_hot_prospect} }
-          : p
-        ));
-      }
-    } catch(e) { console.error(e); }
-  };
 
   // Call list
   const callListProspects = useMemo(() => {
@@ -195,9 +186,6 @@ export default function ProspectsPage() {
       return matchesStatus && matchesPriority;
     });
   }, [prospects, filters.status, filters.priority]);
-
-  // displayProspects = server already filtered by tab (mine param)
-  const displayProspects = filteredProspects;
 
   const handleExport = () => {
     const csv = [
@@ -298,16 +286,16 @@ export default function ProspectsPage() {
               <h1 className="text-3xl font-bold text-[#011745]">Prospects</h1>
               {isSalesOnly ? (
                 <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#eef2fa] text-[#3d61a4]">
-                  <User size={12} /> {listTab === 'mijn' ? 'Mijn prospects' : 'Algemene prospects'}
+                  <User size={12} /> Mijn prospects
                 </span>
               ) : (
                 <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#f3f4f8] text-[#7b859e]">
-                  {listTab === 'mijn' ? 'Mijn prospects' : 'Alle prospects'}
+                  Alle prospects
                 </span>
               )}
             </div>
             <p className="text-[#7b859e] text-sm mt-1">
-              {loading ? 'Laden...' : `${displayProspects.length} prospects • ${prospects.filter(p => p.taperPayActive || p.taperTradeActive).length} active`}
+              {loading ? 'Laden...' : `${filteredProspects.length} prospects • ${prospects.filter(p => p.taperPayActive || p.taperTradeActive).length} active`}
             </p>
           </div>
 
@@ -366,32 +354,6 @@ export default function ProspectsPage() {
           </div>
         </div>
 
-
-        {/* List Tab Toggle */}
-        <div className="flex gap-1 bg-[#f3f4f8] rounded-lg p-1 w-fit">
-          {!isExtern && (
-            <button
-              onClick={() => setListTab('algemeen')}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                listTab === 'algemeen'
-                  ? 'bg-white text-[#3d61a4] shadow-sm'
-                  : 'text-[#7b859e] hover:text-[#3d61a4]'
-              }`}
-            >
-              Algemeen
-            </button>
-          )}
-          <button
-            onClick={() => setListTab('mijn')}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              listTab === 'mijn'
-                ? 'bg-white text-[#3d61a4] shadow-sm'
-                : 'text-[#7b859e] hover:text-[#3d61a4]'
-            }`}
-          >
-            Mijn lijst
-          </button>
-        </div>
         {/* Search & Filter Bar */}
         <div className="flex gap-3">
           <div className="flex-1 relative">
@@ -533,7 +495,7 @@ export default function ProspectsPage() {
                 Opnieuw proberen
               </button>
             </div>
-          ) : displayProspects.length === 0 ? (
+          ) : filteredProspects.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-3">
               <p className="text-base font-semibold" style={{ color: '#011745' }}>Geen prospects gevonden</p>
               <p className="text-sm" style={{ color: '#7b859e' }}>
@@ -542,18 +504,14 @@ export default function ProspectsPage() {
             </div>
           ) : viewMode === 'list' ? (
             <ProspectTable
-              prospects={displayProspects}
-              showOwner={!isSalesOnly}
+              prospects={filteredProspects}
               onSelectProspect={setSelectedProspect}
-              onToggleHot={toggleHot}
             />
           ) : (
             <ProspectKanban
-              prospects={displayProspects}
-              showOwner={!isSalesOnly}
+              prospects={filteredProspects}
               onSelectProspect={setSelectedProspect}
               onStatusChange={handleStatusChange}
-              onToggleHot={toggleHot}
             />
           )}
         </div>

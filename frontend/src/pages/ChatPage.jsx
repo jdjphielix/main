@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  MessageSquare, Plus, Send, Hash, Users, User, Loader2, Search,
-  X, Smile, Paperclip, AtSign, ChevronDown, AlertCircle, Lock, Calendar
+  MessageSquare, Plus, Send, Hash, Users, Loader2, Search,
+  X, Smile, Paperclip, AtSign, ChevronDown, AlertCircle, Lock,
+  User, UserPlus, UserMinus, Check, Settings
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -13,7 +14,9 @@ async function api(path, opts = {}) {
     headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json', ...opts.headers },
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  // DELETE may return empty body
+  const text = await res.text();
+  return text ? JSON.parse(text) : {};
 }
 
 export default function ChatPage() {
@@ -27,27 +30,37 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [showNewChannel, setShowNewChannel] = useState(false);
   const [newChannelName, setNewChannelName] = useState('');
-  const [teamUsers, setTeamUsers] = useState([]);
-  const [selectedMembers, setSelectedMembers] = useState([]);
-  const [memberSearch, setMemberSearch] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [allUsers, setAllUsers] = useState([]);
+  const [selectedMemberIds, setSelectedMemberIds] = useState([]);
+  const [showManageMembers, setShowManageMembers] = useState(false);
   const messagesEndRef = useRef(null);
   const wsRef = useRef(null);
-  const [showMemberPanel, setShowMemberPanel] = useState(false);
-  const [addMemberSearch, setAddMemberSearch] = useState('');
-  const [allUsers, setAllUsers] = useState([]);
-  const [addingMember, setAddingMember] = useState(null);
 
-  // Fetch channels
+  // Fetch all team members (for DMs, group creation and member management)
+  const fetchUsers = useCallback(async () => {
+    try {
+      const data = await api('/api/v1/users/team');
+      setAllUsers(Array.isArray(data) ? data.filter(u => u.id !== user?.id) : []);
+    } catch (err) {
+      console.error('Failed to fetch users:', err);
+    }
+  }, [user?.id]);
+
+  // Fetch channels; preserve current selection by id
   const fetchChannels = useCallback(async () => {
     setLoadingChannels(true);
     try {
       const data = await api('/api/v1/chat/channels');
-      setChannels(data.channels || []);
-      // Auto-select first channel
-      if (!activeChannel && data.channels?.length > 0) {
-        setActiveChannel(data.channels[0]);
-      }
+      const list = data.channels || [];
+      setChannels(list);
+      setActiveChannel(prev => {
+        if (prev) {
+          const updated = list.find(c => c.id === prev.id);
+          if (updated) return updated;
+        }
+        return prev || (list.length > 0 ? list[0] : null);
+      });
     } catch (err) {
       console.error('Failed to fetch channels:', err);
     } finally {
@@ -55,14 +68,12 @@ export default function ChatPage() {
     }
   }, []);
 
-  // Fetch messages for active channel
   const fetchMessages = useCallback(async (channelId) => {
     if (!channelId) return;
     setLoadingMessages(true);
     try {
       const data = await api(`/api/v1/chat/channels/${channelId}/messages?page_size=100`);
       setMessages(data.messages || []);
-      // Mark as read
       await fetch(`/api/v1/chat/channels/${channelId}/read`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token()}` },
@@ -75,19 +86,16 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => { fetchChannels(); }, [fetchChannels]);
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
   useEffect(() => {
-    if (activeChannel) {
-      fetchMessages(activeChannel.id);
-    }
-  }, [activeChannel, fetchMessages]);
+    if (activeChannel) fetchMessages(activeChannel.id);
+  }, [activeChannel?.id, fetchMessages]);
 
-  // Scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Keep activeChannel in a ref so the WS handler always has the latest value
   const activeChannelRef = useRef(activeChannel);
   useEffect(() => { activeChannelRef.current = activeChannel; }, [activeChannel]);
 
@@ -103,15 +111,21 @@ export default function ChatPage() {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.type === 'message' && data.channel_id === activeChannelRef.current?.id) {
-            setMessages(prev => [...prev, {
-              id: data.message_id,
-              user_id: data.user_id,
-              user_name: data.user_name,
-              content: data.content,
-              created_at: data.timestamp,
-              message_type: 'text',
-            }]);
+          // Ignore our own broadcast — we already append locally on send (prevents duplicates)
+          if (data.type === 'message'
+              && data.channel_id === activeChannelRef.current?.id
+              && data.user_id !== user.id) {
+            setMessages(prev => {
+              if (prev.some(m => m.id === data.message_id)) return prev;
+              return [...prev, {
+                id: data.message_id,
+                user_id: data.user_id,
+                user_name: data.user_name,
+                content: data.content,
+                created_at: data.timestamp,
+                message_type: 'text',
+              }];
+            });
           }
         } catch (err) {
           console.error('WebSocket message parse error:', err);
@@ -124,7 +138,6 @@ export default function ChatPage() {
     return () => { wsRef.current?.close(); };
   }, [user?.id]);
 
-  // Send message
   async function handleSend() {
     if (!newMessage.trim() || !activeChannel) return;
     setSending(true);
@@ -149,102 +162,68 @@ export default function ChatPage() {
     }
   }
 
-  // Load team users when the new channel form opens
-  React.useEffect(() => {
-    if (showNewChannel) {
-      setSelectedMembers([]);
-      setMemberSearch('');
-      api('/api/v1/users/team').then(data => {
-        setTeamUsers((data || []).filter(u => u.status !== 'inactive'));
-      }).catch(() => {});
-    }
-  }, [showNewChannel]);
-
-  // Create channel
+  // Create a group/channel with selected members
   async function handleCreateChannel() {
     if (!newChannelName.trim()) return;
     try {
       await api('/api/v1/chat/channels', {
         method: 'POST',
         body: JSON.stringify({
-          channel_type: 'channel',
+          channel_type: selectedMemberIds.length > 0 ? 'group' : 'channel',
           name: newChannelName.trim(),
-          member_ids: selectedMembers,
+          member_ids: selectedMemberIds,
         }),
       });
       setNewChannelName('');
+      setSelectedMemberIds([]);
       setShowNewChannel(false);
-      setSelectedMembers([]);
-      setMemberSearch('');
       fetchChannels();
     } catch (err) {
       alert('Kanaal aanmaken mislukt: ' + err.message);
     }
   }
 
-  function toggleMember(userId) {
-    setSelectedMembers(prev =>
-      prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
-    );
-  }
-
-  // Load all team users for member panel
-  async function openMemberPanel() {
-    setShowMemberPanel(true);
-    setAddMemberSearch('');
+  // Start (or open existing) direct message with a user
+  async function handleStartDm(otherUserId) {
     try {
-      const data = await api('/api/v1/users/team');
-      setAllUsers((data || []).filter(u => u.status !== 'inactive'));
-    } catch {}
+      const ch = await api('/api/v1/chat/channels', {
+        method: 'POST',
+        body: JSON.stringify({ channel_type: 'dm', member_ids: [otherUserId] }),
+      });
+      await fetchChannels();
+      setActiveChannel(prev => ({ id: ch.id, name: ch.name, channel_type: 'dm', members: [] }));
+    } catch (err) {
+      alert('Gesprek starten mislukt: ' + err.message);
+    }
   }
 
-  async function addMemberToChannel(userId) {
-    if (!activeChannel || addingMember) return;
-    setAddingMember(userId);
+  async function handleAddMember(uid) {
+    if (!activeChannel) return;
     try {
       await api(`/api/v1/chat/channels/${activeChannel.id}/members`, {
         method: 'POST',
-        body: JSON.stringify({ user_id: userId }),
+        body: JSON.stringify({ user_ids: [uid] }),
       });
-      // Update local channel members
-      const addedUser = allUsers.find(u => u.id === userId);
-      if (addedUser) {
-        setActiveChannel(prev => ({
-          ...prev,
-          members: [...(prev.members || []), { id: userId, name: addedUser.full_name }],
-        }));
-        setChannels(prev => prev.map(c =>
-          c.id === activeChannel.id
-            ? { ...c, members: [...(c.members || []), { id: userId, name: addedUser.full_name }] }
-            : c
-        ));
-      }
+      fetchChannels();
     } catch (err) {
-      alert('Toevoegen mislukt: ' + err.message);
+      alert('Lid toevoegen mislukt: ' + err.message);
     }
-    setAddingMember(null);
   }
 
-  async function removeMemberFromChannel(userId) {
+  async function handleRemoveMember(uid) {
     if (!activeChannel) return;
-    if (!window.confirm('Lid verwijderen uit kanaal?')) return;
     try {
-      const res = await fetch(`/api/v1/chat/channels/${activeChannel.id}/members/${userId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      if (res.ok) {
-        setActiveChannel(prev => ({
-          ...prev,
-          members: (prev.members || []).filter(m => m.id !== userId),
-        }));
-        setChannels(prev => prev.map(c =>
-          c.id === activeChannel.id
-            ? { ...c, members: (c.members || []).filter(m => m.id !== userId) }
-            : c
-        ));
-      }
-    } catch {}
+      await api(`/api/v1/chat/channels/${activeChannel.id}/members/${uid}`, { method: 'DELETE' });
+      fetchChannels();
+    } catch (err) {
+      alert('Lid verwijderen mislukt: ' + err.message);
+    }
+  }
+
+  function toggleMemberSelection(uid) {
+    setSelectedMemberIds(prev =>
+      prev.includes(uid) ? prev.filter(id => id !== uid) : [...prev, uid]
+    );
   }
 
   function formatTime(dateStr) {
@@ -258,130 +237,159 @@ export default function ChatPage() {
       d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
   }
 
+  function channelDisplayName(c) {
+    if (!c) return '';
+    if (c.name) return c.name;
+    if (c.channel_type === 'dm') {
+      const other = (c.members || []).find(m => m.id !== user?.id);
+      return other?.name || 'Direct Message';
+    }
+    return 'Kanaal';
+  }
+
+  function ChannelIcon({ type, size = 14 }) {
+    if (type === 'dm') return <User size={size} />;
+    if (type === 'group') return <Users size={size} />;
+    return <Hash size={size} />;
+  }
+
   const filteredChannels = channels.filter(c =>
-    !searchQuery || (c.name || '').toLowerCase().includes(searchQuery.toLowerCase())
+    !searchQuery || channelDisplayName(c).toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Users without a 1-on-1 DM yet (for the "Personen" quick-start list)
+  const dmUserIds = new Set(
+    channels.filter(c => c.channel_type === 'dm')
+      .flatMap(c => (c.members || []).map(m => m.id))
+  );
+  const filteredUsers = allUsers.filter(u =>
+    !searchQuery || (u.full_name || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const currentMemberIds = new Set((activeChannel?.members || []).map(m => m.id));
+  const addableUsers = allUsers.filter(u => !currentMemberIds.has(u.id));
 
   return (
     <div className="h-screen flex bg-[#f7f8fc]">
       {/* Channel Sidebar */}
       <div className="w-72 bg-white border-r border-[#e8eaf2] flex flex-col">
-        {/* Header */}
         <div className="p-4 border-b border-[#e8eaf2]">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-bold" style={{ color: '#011745' }}>Chat</h2>
             <button onClick={() => setShowNewChannel(true)}
+              title="Nieuwe groep / kanaal"
               className="p-2 rounded-lg hover:bg-[#eef2fa] transition-colors" style={{ color: '#3d61a4' }}>
               <Plus size={18} />
             </button>
           </div>
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#a4abbe' }} />
-            <input type="text" placeholder="Zoek kanaal..."
+            <input type="text" placeholder="Zoek kanaal of persoon..."
               value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-3 py-2 bg-[#f7f8fc] rounded-lg border border-[#e8eaf2] text-xs focus:outline-none focus:border-[#3d61a4]"
               style={{ color: '#566079' }} />
           </div>
         </div>
 
-        {/* New Channel Form */}
+        {/* New Channel / Group Form */}
         {showNewChannel && (
           <div className="p-3 border-b border-[#e8eaf2] bg-[#f7f8fc]">
-            <input type="text" placeholder="Kanaalnaam..."
+            <input type="text" placeholder="Naam van groep/kanaal..."
               value={newChannelName} onChange={e => setNewChannelName(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleCreateChannel()}
               autoFocus
               className="w-full px-3 py-2 bg-white rounded-lg border border-[#e8eaf2] text-xs focus:outline-none focus:border-[#3d61a4] mb-2"
               style={{ color: '#566079' }} />
-            {/* Member selection */}
-            <input
-              type="text"
-              placeholder="Leden zoeken..."
-              value={memberSearch}
-              onChange={e => setMemberSearch(e.target.value)}
-              className="w-full px-3 py-1.5 bg-white rounded-lg border border-[#e8eaf2] text-xs focus:outline-none focus:border-[#3d61a4] mb-1"
-              style={{ color: '#566079' }} />
-            <div className="max-h-32 overflow-y-auto mb-2 space-y-0.5">
-              {teamUsers
-                .filter(u => !memberSearch || u.full_name?.toLowerCase().includes(memberSearch.toLowerCase()))
-                .map(u => (
-                  <div key={u.id}
-                    onClick={() => toggleMember(u.id)}
-                    className="flex items-center gap-2 px-2 py-1 rounded-lg cursor-pointer hover:bg-[#eef2fa] transition-colors">
-                    <div className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0"
-                      style={{
-                        borderColor: selectedMembers.includes(u.id) ? '#3d61a4' : '#cdd1e0',
-                        backgroundColor: selectedMembers.includes(u.id) ? '#3d61a4' : 'transparent',
-                      }}>
-                      {selectedMembers.includes(u.id) && (
-                        <svg viewBox="0 0 10 10" width="8" height="8" fill="none">
-                          <path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      )}
-                    </div>
-                    <span className="text-xs" style={{ color: '#566079' }}>{u.full_name}</span>
-                    <span className="text-[10px] ml-auto" style={{ color: '#a4abbe' }}>{u.role}</span>
-                  </div>
-                ))}
+            <p className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: '#a4abbe' }}>
+              Leden toevoegen ({selectedMemberIds.length})
+            </p>
+            <div className="max-h-40 overflow-auto rounded-lg border border-[#e8eaf2] bg-white mb-2">
+              {allUsers.length === 0 ? (
+                <p className="text-[11px] p-2" style={{ color: '#a4abbe' }}>Geen andere gebruikers</p>
+              ) : allUsers.map(u => (
+                <button key={u.id} onClick={() => toggleMemberSelection(u.id)}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-[#f7f8fc] text-left">
+                  <span className="w-4 h-4 rounded flex items-center justify-center border"
+                    style={{
+                      borderColor: selectedMemberIds.includes(u.id) ? '#3d61a4' : '#cdd1e0',
+                      backgroundColor: selectedMemberIds.includes(u.id) ? '#3d61a4' : '#fff',
+                    }}>
+                    {selectedMemberIds.includes(u.id) && <Check size={11} color="#fff" />}
+                  </span>
+                  <span className="text-xs truncate" style={{ color: '#566079' }}>{u.full_name}</span>
+                  <span className="text-[10px] ml-auto" style={{ color: '#a4abbe' }}>{u.role}</span>
+                </button>
+              ))}
             </div>
-            {selectedMembers.length > 0 && (
-              <p className="text-[10px] mb-1.5" style={{ color: '#3d61a4' }}>
-                {selectedMembers.length} lid{selectedMembers.length !== 1 ? 'en' : ''} geselecteerd
-              </p>
-            )}
             <div className="flex gap-2">
               <button onClick={handleCreateChannel}
                 className="flex-1 px-3 py-1.5 rounded-lg text-white text-xs font-medium"
                 style={{ backgroundColor: '#3d61a4' }}>Aanmaken</button>
-              <button onClick={() => { setShowNewChannel(false); setNewChannelName(''); }}
+              <button onClick={() => { setShowNewChannel(false); setNewChannelName(''); setSelectedMemberIds([]); }}
                 className="px-3 py-1.5 rounded-lg text-xs" style={{ color: '#7b859e' }}>Annuleer</button>
             </div>
           </div>
         )}
 
-        {/* Channel List */}
+        {/* Channel + People List */}
         <div className="flex-1 overflow-auto">
           {loadingChannels ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 size={20} className="animate-spin" style={{ color: '#3d61a4' }} />
             </div>
-          ) : filteredChannels.length === 0 ? (
-            <div className="p-4 text-center">
-              <MessageSquare size={24} className="mx-auto mb-2" style={{ color: '#cdd1e0' }} />
-              <p className="text-xs" style={{ color: '#7b859e' }}>
-                {channels.length === 0 ? 'Maak een kanaal aan om te beginnen' : 'Geen resultaten'}
-              </p>
-            </div>
           ) : (
-            <div className="p-2 space-y-0.5">
-              {filteredChannels.map(channel => (
-                <button key={channel.id}
-                  onClick={() => setActiveChannel(channel)}
-                  className={`w-full text-left px-3 py-2.5 rounded-lg transition-all flex items-center gap-2.5 ${
-                    activeChannel?.id === channel.id
-                      ? 'bg-[#eef2fa]'
-                      : 'hover:bg-[#f7f8fc]'
-                  }`}>
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                    style={{
-                      backgroundColor: activeChannel?.id === channel.id ? '#3d61a4' : '#f3f4f8',
-                      color: activeChannel?.id === channel.id ? '#fff' : '#7b859e',
-                    }}>
-                    {channel.channel_type === 'dm' ? <User size={14} /> :
-                      channel.channel_type === 'group' ? <Users size={14} /> : <Hash size={14} />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate"
-                      style={{ color: activeChannel?.id === channel.id ? '#011745' : '#566079' }}>
-                      {channel.name || 'Direct Message'}
-                    </p>
-                    <p className="text-[10px]" style={{ color: '#a4abbe' }}>
-                      {channel.members?.length || 0} leden
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="p-2 space-y-0.5">
+                {filteredChannels.length === 0 ? (
+                  <p className="text-[11px] px-3 py-2" style={{ color: '#a4abbe' }}>Nog geen gesprekken</p>
+                ) : filteredChannels.map(channel => (
+                  <button key={channel.id}
+                    onClick={() => setActiveChannel(channel)}
+                    className={`w-full text-left px-3 py-2.5 rounded-lg transition-all flex items-center gap-2.5 ${
+                      activeChannel?.id === channel.id ? 'bg-[#eef2fa]' : 'hover:bg-[#f7f8fc]'
+                    }`}>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                      style={{
+                        backgroundColor: activeChannel?.id === channel.id ? '#3d61a4' : '#f3f4f8',
+                        color: activeChannel?.id === channel.id ? '#fff' : '#7b859e',
+                      }}>
+                      <ChannelIcon type={channel.channel_type} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate"
+                        style={{ color: activeChannel?.id === channel.id ? '#011745' : '#566079' }}>
+                        {channelDisplayName(channel)}
+                      </p>
+                      <p className="text-[10px]" style={{ color: '#a4abbe' }}>
+                        {channel.channel_type === 'dm' ? 'Direct bericht' : `${channel.members?.length || 0} leden`}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {/* People — start a direct message */}
+              <div className="px-3 pt-3 pb-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#a4abbe' }}>Personen</p>
+              </div>
+              <div className="p-2 pt-0 space-y-0.5">
+                {filteredUsers.length === 0 ? (
+                  <p className="text-[11px] px-3 py-1" style={{ color: '#a4abbe' }}>Geen gebruikers</p>
+                ) : filteredUsers.map(u => (
+                  <button key={u.id} onClick={() => handleStartDm(u.id)}
+                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#f7f8fc] flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-white text-[11px] font-bold"
+                      style={{ backgroundColor: '#5a7fc2' }}>
+                      {(u.full_name || '?').charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate" style={{ color: '#566079' }}>{u.full_name}</p>
+                      <p className="text-[10px] truncate" style={{ color: '#a4abbe' }}>{u.role}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -395,100 +403,65 @@ export default function ChatPage() {
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-lg flex items-center justify-center"
                   style={{ backgroundColor: '#eef2fa', color: '#3d61a4' }}>
-                  {activeChannel.channel_type === 'dm' ? <User size={16} /> :
-                    activeChannel.channel_type === 'group' ? <Users size={16} /> : <Hash size={16} />}
+                  <ChannelIcon type={activeChannel.channel_type} size={16} />
                 </div>
                 <div>
-                  <h3 className="font-semibold" style={{ color: '#011745' }}>{activeChannel.name || 'Direct Message'}</h3>
+                  <h3 className="font-semibold" style={{ color: '#011745' }}>{channelDisplayName(activeChannel)}</h3>
                   <p className="text-xs" style={{ color: '#7b859e' }}>
-                    {activeChannel.members?.length || 0} leden
+                    {activeChannel.channel_type === 'dm'
+                      ? 'Direct bericht'
+                      : `${activeChannel.members?.length || 0} leden`}
                     {activeChannel.description && ` • ${activeChannel.description}`}
                   </p>
                 </div>
               </div>
-              <button
-                onClick={openMemberPanel}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-[#eef2fa] transition-colors"
-                style={{ color: '#3d61a4' }}
-                title="Leden beheren"
-              >
-                <Users size={15} />
-                Leden beheren
-              </button>
+              {activeChannel.channel_type !== 'dm' && (
+                <button onClick={() => setShowManageMembers(v => !v)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-[#eef2fa]"
+                  style={{ color: '#3d61a4' }}>
+                  <Settings size={14} /> Leden
+                </button>
+              )}
             </div>
 
-            {/* Member Panel */}
-            {showMemberPanel && (
-              <div className="bg-white border-b border-[#e8eaf2] px-6 py-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-semibold" style={{ color: '#011745' }}>Kanaalleden</h4>
-                  <button onClick={() => setShowMemberPanel(false)} style={{ color: '#a4abbe' }}>
-                    <X size={16} />
-                  </button>
-                </div>
-
-                {/* Current members */}
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {(activeChannel.members || []).map(m => (
-                    <div key={m.id} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
-                      style={{ backgroundColor: '#eef2fa', color: '#3d61a4' }}>
-                      <span>{m.name}</span>
-                      <button
-                        onClick={() => removeMemberFromChannel(m.id)}
-                        className="hover:text-red-500 transition-colors ml-0.5"
-                        title="Verwijderen"
-                      >
-                        <X size={11} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Add member search */}
-                <div className="relative mb-2">
-                  <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#a4abbe' }} />
-                  <input
-                    type="text"
-                    placeholder="Gebruiker zoeken om toe te voegen..."
-                    value={addMemberSearch}
-                    onChange={e => setAddMemberSearch(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 bg-[#f7f8fc] rounded-lg border border-[#e8eaf2] text-xs focus:outline-none focus:border-[#3d61a4]"
-                    style={{ color: '#566079' }}
-                  />
-                </div>
-                <div className="max-h-36 overflow-y-auto space-y-0.5">
-                  {allUsers
-                    .filter(u => {
-                      const alreadyMember = (activeChannel.members || []).some(m => m.id === u.id);
-                      const matchSearch = !addMemberSearch || u.full_name?.toLowerCase().includes(addMemberSearch.toLowerCase()) || u.email?.toLowerCase().includes(addMemberSearch.toLowerCase());
-                      return !alreadyMember && matchSearch;
-                    })
-                    .map(u => (
-                      <div key={u.id}
-                        className="flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-[#f7f8fc] transition-colors">
-                        <div>
-                          <span className="text-xs font-medium" style={{ color: '#011745' }}>{u.full_name}</span>
-                          <span className="text-[10px] ml-2" style={{ color: '#a4abbe' }}>{u.email}</span>
-                        </div>
-                        <button
-                          onClick={() => addMemberToChannel(u.id)}
-                          disabled={addingMember === u.id}
-                          className="text-xs px-2.5 py-1 rounded-lg font-medium transition-colors disabled:opacity-50"
-                          style={{ backgroundColor: '#eef2fa', color: '#3d61a4' }}
-                        >
-                          {addingMember === u.id ? '...' : '+ Toevoegen'}
-                        </button>
-                      </div>
-                    ))}
-                  {allUsers.filter(u => {
-                    const alreadyMember = (activeChannel.members || []).some(m => m.id === u.id);
-                    const matchSearch = !addMemberSearch || u.full_name?.toLowerCase().includes(addMemberSearch.toLowerCase()) || u.email?.toLowerCase().includes(addMemberSearch.toLowerCase());
-                    return !alreadyMember && matchSearch;
-                  }).length === 0 && (
-                    <p className="text-xs text-center py-2" style={{ color: '#a4abbe' }}>
-                      {addMemberSearch ? 'Geen gebruikers gevonden' : 'Alle teamleden zijn al lid'}
+            {/* Manage members panel */}
+            {showManageMembers && activeChannel.channel_type !== 'dm' && (
+              <div className="px-6 py-4 bg-[#f7f8fc] border-b border-[#e8eaf2]">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: '#7b859e' }}>
+                      Leden ({activeChannel.members?.length || 0})
                     </p>
-                  )}
+                    <div className="space-y-1 max-h-40 overflow-auto">
+                      {(activeChannel.members || []).map(m => (
+                        <div key={m.id} className="flex items-center gap-2 bg-white rounded-lg px-2.5 py-1.5 border border-[#e8eaf2]">
+                          <span className="text-xs truncate flex-1" style={{ color: '#566079' }}>{m.name}</span>
+                          {m.id !== activeChannel.created_by_id && (
+                            <button onClick={() => handleRemoveMember(m.id)} title="Verwijderen"
+                              className="p-1 rounded hover:bg-red-50" style={{ color: '#c0392b' }}>
+                              <UserMinus size={13} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: '#7b859e' }}>
+                      Toevoegen
+                    </p>
+                    <div className="space-y-1 max-h-40 overflow-auto">
+                      {addableUsers.length === 0 ? (
+                        <p className="text-[11px]" style={{ color: '#a4abbe' }}>Iedereen zit al in dit kanaal</p>
+                      ) : addableUsers.map(u => (
+                        <button key={u.id} onClick={() => handleAddMember(u.id)}
+                          className="w-full flex items-center gap-2 bg-white rounded-lg px-2.5 py-1.5 border border-[#e8eaf2] hover:border-[#3d61a4]">
+                          <UserPlus size={13} style={{ color: '#3d61a4' }} />
+                          <span className="text-xs truncate flex-1 text-left" style={{ color: '#566079' }}>{u.full_name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -525,19 +498,14 @@ export default function ChatPage() {
                               {msg.user_name}
                             </p>
                           )}
-                          <div className={`px-4 py-2.5 rounded-2xl ${
-                            isMe
-                              ? 'rounded-br-md text-white'
-                              : 'rounded-bl-md'
-                          }`}
+                          <div className={`px-4 py-2.5 rounded-2xl ${isMe ? 'rounded-br-md text-white' : 'rounded-bl-md'}`}
                             style={{
                               backgroundColor: isMe ? '#3d61a4' : '#f3f4f8',
                               color: isMe ? '#fff' : '#011745',
                             }}>
                             <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                           </div>
-                          <p className={`text-[10px] mt-1 ${isMe ? 'text-right' : ''}`}
-                            style={{ color: '#a4abbe' }}>
+                          <p className={`text-[10px] mt-1 ${isMe ? 'text-right' : ''}`} style={{ color: '#a4abbe' }}>
                             {formatTime(msg.created_at)}
                           </p>
                         </div>
@@ -557,10 +525,7 @@ export default function ChatPage() {
                     value={newMessage}
                     onChange={e => setNewMessage(e.target.value)}
                     onKeyDown={e => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSend();
-                      }
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
                     }}
                     placeholder="Typ een bericht..."
                     rows={1}
@@ -580,8 +545,8 @@ export default function ChatPage() {
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-3">
             <MessageSquare size={48} style={{ color: '#cdd1e0' }} />
-            <p className="font-semibold" style={{ color: '#011745' }}>Selecteer een kanaal</p>
-            <p className="text-sm" style={{ color: '#7b859e' }}>of maak een nieuw kanaal aan</p>
+            <p className="font-semibold" style={{ color: '#011745' }}>Selecteer een kanaal of persoon</p>
+            <p className="text-sm" style={{ color: '#7b859e' }}>of maak een nieuwe groep aan</p>
           </div>
         )}
       </div>

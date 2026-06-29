@@ -62,6 +62,7 @@ async def list_channels(
                 "name": c.name,
                 "description": c.description,
                 "channel_type": c.channel_type,
+                "created_by_id": c.created_by_id,
                 "members": [{"id": m.user_id, "name": m.user.full_name} for m in c.members],
                 "created_at": c.created_at.isoformat() if c.created_at else None,
                 "message_count": len(c.messages),
@@ -88,10 +89,31 @@ async def create_channel(
     }
     """
     channel_type = channel_data.get("channel_type", "dm")
+    member_ids_in = channel_data.get("member_ids", []) or []
 
     # Validate
     if channel_type in ["group", "channel"] and not channel_data.get("name"):
         raise HTTPException(status_code=400, detail="name required for group/channel")
+
+    # DM dedup: if a 1-on-1 DM already exists between these two users, reuse it
+    if channel_type == "dm" and len(member_ids_in) >= 1:
+        other_id = member_ids_in[0]
+        wanted = {current_user.id, other_id}
+        existing_dms = db.query(ChatChannel).join(ChatMember).filter(
+            ChatChannel.channel_type == "dm",
+            ChatChannel.is_archived == False,
+            ChatMember.user_id == current_user.id,
+        ).all()
+        for dm in existing_dms:
+            member_set = {m.user_id for m in dm.members}
+            if member_set == wanted:
+                return {
+                    "id": dm.id,
+                    "name": dm.name,
+                    "channel_type": dm.channel_type,
+                    "created_at": dm.created_at,
+                    "existing": True,
+                }
 
     # Create channel
     channel = ChatChannel(
@@ -111,8 +133,7 @@ async def create_channel(
     db.add(creator_member)
 
     # Add other members
-    member_ids = channel_data.get("member_ids", [])
-    for member_id in member_ids:
+    for member_id in member_ids_in:
         if member_id != current_user.id:
             member = ChatMember(
                 channel_id=channel.id,
@@ -271,56 +292,50 @@ async def mark_channel_read(
     return {"status": "marked_read", "channel_id": channel_id}
 
 
+def _can_manage_members(user: User, channel: ChatChannel) -> bool:
+    """Creator, admins and teamleaders may manage channel members."""
+    return (
+        channel.created_by_id == user.id
+        or user.role in ("admin_pay", "admin_trade")
+        or bool(getattr(user, "is_teamleader", False))
+    )
 
 
 @router.post("/channels/{channel_id}/members")
-async def add_channel_member(
+async def add_channel_members(
     channel_id: int,
-    data: dict,
+    payload: dict,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Add a user to a channel. Only channel members can add others."""
+    """Add one or more users to an existing channel/group. Payload: user_ids list."""
     channel = db.query(ChatChannel).filter(ChatChannel.id == channel_id).first()
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
+    if channel.channel_type == "dm":
+        raise HTTPException(status_code=400, detail="Cannot add members to a direct message")
 
-    # Verify requester is a member
-    is_member = db.query(ChatMember).filter(
-        ChatMember.channel_id == channel_id,
-        ChatMember.user_id == current_user.id,
+    me = db.query(ChatMember).filter(
+        ChatMember.channel_id == channel_id, ChatMember.user_id == current_user.id
     ).first()
-    if not is_member:
-        raise HTTPException(status_code=403, detail="Not a channel member")
+    if not me:
+        raise HTTPException(status_code=403, detail="Not a member of this channel")
+    if not _can_manage_members(current_user, channel):
+        raise HTTPException(status_code=403, detail="Only the channel owner can manage members")
 
-    user_id = data.get("user_id")
-    if not user_id:
-        raise HTTPException(status_code=400, detail="user_id required")
-
-    # Check if already a member
-    existing = db.query(ChatMember).filter(
-        ChatMember.channel_id == channel_id,
-        ChatMember.user_id == user_id,
-    ).first()
-    if existing:
-        return {"ok": True, "message": "Already a member"}
-
-    # Add member
-    new_member = ChatMember(channel_id=channel_id, user_id=user_id)
-    db.add(new_member)
+    user_ids = payload.get("user_ids", []) or []
+    existing = {m.user_id for m in channel.members}
+    added = []
+    for uid in user_ids:
+        if uid in existing:
+            continue
+        user = db.query(User).filter(User.id == uid, User.status == "active").first()
+        if not user:
+            continue
+        db.add(ChatMember(channel_id=channel_id, user_id=uid))
+        added.append(uid)
     db.commit()
-
-    # Notify existing members via WebSocket
-    added_user = db.query(User).filter(User.id == user_id).first()
-    for member in channel.members:
-        await manager.broadcast_to_user(member.user_id, {
-            "type": "member_added",
-            "channel_id": channel_id,
-            "user_id": user_id,
-            "user_name": added_user.full_name if added_user else str(user_id),
-        })
-
-    return {"ok": True, "user_id": user_id}
+    return {"status": "ok", "added": added}
 
 
 @router.delete("/channels/{channel_id}/members/{user_id}")
@@ -330,24 +345,26 @@ async def remove_channel_member(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Remove a user from a channel. Members can remove themselves; creator can remove others."""
+    """Remove a member from a channel/group. Owner/admin can remove anyone; anyone may remove themselves (leave)."""
     channel = db.query(ChatChannel).filter(ChatChannel.id == channel_id).first()
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
+    if channel.channel_type == "dm":
+        raise HTTPException(status_code=400, detail="Cannot remove members from a direct message")
 
-    # Can remove self, or creator can remove anyone
-    if user_id != current_user.id and channel.created_by_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to remove this member")
+    is_self = user_id == current_user.id
+    if not is_self and not _can_manage_members(current_user, channel):
+        raise HTTPException(status_code=403, detail="Only the channel owner can remove other members")
 
     member = db.query(ChatMember).filter(
-        ChatMember.channel_id == channel_id,
-        ChatMember.user_id == user_id,
+        ChatMember.channel_id == channel_id, ChatMember.user_id == user_id
     ).first()
-    if member:
-        db.delete(member)
-        db.commit()
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+    db.delete(member)
+    db.commit()
+    return {"status": "ok", "removed": user_id}
 
-    return {"ok": True}
 
 @router.websocket("/ws/{user_id}")
 async def websocket_endpoint(

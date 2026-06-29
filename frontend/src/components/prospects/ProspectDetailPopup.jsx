@@ -3,13 +3,11 @@ import { X, Plus, Calendar, Users, FileText, MessageSquare, Clock, Check, Loader
 import CurrencySelector from './CurrencySelector';
 import RevenueCard from './RevenueCard';
 import DocumentUpload from '../common/DocumentUpload';
-import { useAuth } from '../../contexts/AuthContext';
 
 const API = '/api/v1';
 const token = () => sessionStorage.getItem('auth_token');
 
 export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onToggleCallList }) {
-  const { user: authUser } = useAuth();
   const [activeTab, setActiveTab] = useState('general');
   const [taperPayActive, setTaperPayActive] = useState(prospect.taperPayActive);
   const [taperTradeActive, setTaperTradeActive] = useState(prospect.taperTradeActive);
@@ -26,23 +24,6 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
   const [notes, setNotes] = useState(prospect.notes || []);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
-
-  // Inline editing state
-  const [editing, setEditing] = useState(null);
-  const [editVal, setEditVal] = useState('');
-
-  const saveField = async (field, value) => {
-    try {
-      const tok = sessionStorage.getItem('auth_token');
-      await fetch(`/api/v1/leads/${leadId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
-        body: JSON.stringify({ [field]: value }),
-      });
-      if (onUpdate) onUpdate({ [field]: value });
-    } catch(e) { console.error('Save failed', e); }
-  };
-
 
   // Callback state
   const [callbackDate, setCallbackDate] = useState('');
@@ -61,6 +42,8 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
   // Invite state (shared by callback & meeting)
   const [callbackExternEmail, setCallbackExternEmail] = useState('');
   const [meetingExternEmail, setMeetingExternEmail] = useState('');
+  // Confirmation modal shown before any calendar invite (email) is sent
+  const [confirmInvite, setConfirmInvite] = useState(null); // { kind, recipients[], message, payload }
   const [meetingType, setMeetingType] = useState('physical'); // physical | video
   const [mapQuery, setMapQuery] = useState('');
 
@@ -71,9 +54,6 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
 
   // Moving to onboarding
   const [movingToOnboarding, setMovingToOnboarding] = useState(false);
-  const [salesOwnerId, setSalesOwnerId] = useState(prospect?.salesOwnerId || null);
-  const [salesOwnerName, setSalesOwnerName] = useState(prospect?.salesOwnerName || null);
-  const [ownerLoading, setOwnerLoading] = useState(false);
 
   // Contact methods state
   const [contactMethods, setContactMethods] = useState([]);
@@ -87,8 +67,6 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
   const [expandedConv, setExpandedConv] = useState(null);
   const [showLogForm, setShowLogForm] = useState(false);
   const [showUploadForm, setShowUploadForm] = useState(false);
-  const [prospectDocs, setProspectDocs] = useState([]);
-  const [docsLoading, setDocsLoading] = useState(false);
   const [showWAImport, setShowWAImport] = useState(false);
   const [convForm, setConvForm] = useState({
     type: 'phone', direction: 'outbound', contact_value: '',
@@ -99,6 +77,26 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
   const [convUploading, setConvUploading] = useState(false);
   const transcriptInputRef = useRef(null);
   const waInputRef = useRef(null);
+
+  // General info editing (saved to the underlying Lead — persists across stages)
+  const [editGeneral, setEditGeneral] = useState(false);
+  const [savingGeneral, setSavingGeneral] = useState(false);
+  const [genForm, setGenForm] = useState({
+    company_name: prospect.company || '',
+    company_website: prospect.website || '',
+    company_country: prospect.country || '',
+    company_industry: prospect.industry || '',
+    contact_name: prospect.contactName || '',
+    contact_position: prospect.position || '',
+    contact_email: prospect.email || '',
+    contact_phone: prospect.phone || '',
+  });
+
+  // Documents (keyed by lead_id, so they carry over lead → prospect → onboarding)
+  const [documents, setDocuments] = useState([]);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [docUploading, setDocUploading] = useState(false);
+  const docInputRef = useRef(null);
 
   // Enrichment state
   const [enrichment, setEnrichment] = useState(null);
@@ -172,50 +170,6 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
   // Lead ID for API calls
   const leadId = prospect._raw?.id || prospect.id;
 
-  const fetchProspectDocs = async () => {
-    if (!leadId) return;
-    setDocsLoading(true);
-    try {
-      const res = await fetch(`/api/v1/documents/lead/${leadId}`, {
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setProspectDocs(data.documents || data || []);
-      }
-    } catch (e) { console.error('Docs fetch failed', e); }
-    finally { setDocsLoading(false); }
-  };
-
-  const uploadProspectDoc = async (file) => {
-    if (!file || !leadId) return;
-    const formData = new FormData();
-    formData.append('file', file);
-    const params = new URLSearchParams({ lead_id: leadId, category: 'prospect' });
-    try {
-      const res = await fetch(`/api/v1/documents/upload?${params}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token()}` },
-        body: formData,
-      });
-      if (res.ok) { fetchProspectDocs(); }
-      else { alert('Upload mislukt'); }
-    } catch (e) { alert('Upload fout: ' + e.message); }
-  };
-
-  const deleteProspectDoc = async (docId) => {
-    if (!window.confirm('Document verwijderen?')) return;
-    try {
-      const res = await fetch(`/api/v1/documents/${docId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      if (res.ok) { setProspectDocs(prev => prev.filter(d => d.id !== docId)); }
-    } catch (e) { console.error('Delete failed', e); }
-  };
-
-  React.useEffect(() => { fetchProspectDocs(); }, [leadId]);
-
   // Fetch communications
   useEffect(() => {
     const fetchComms = async () => {
@@ -247,6 +201,95 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
       }
     } catch (e) { console.error('Failed to add communication:', e); }
     setAddingComm(false);
+  };
+
+  // ─── Save general (company/contact) info to the Lead ───
+  const saveGeneral = async () => {
+    setSavingGeneral(true);
+    try {
+      const res = await fetch(`${API}/leads/${leadId}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(genForm),
+      });
+      if (!res.ok) throw new Error('Opslaan mislukt');
+      setEditGeneral(false);
+      setSaveMsg('Algemene gegevens opgeslagen');
+      setTimeout(() => setSaveMsg(null), 2500);
+      if (onUpdate) {
+        onUpdate({
+          ...prospect,
+          company: genForm.company_name,
+          website: genForm.company_website,
+          country: genForm.company_country,
+          industry: genForm.company_industry,
+          contactName: genForm.contact_name,
+          position: genForm.contact_position,
+          email: genForm.contact_email,
+          phone: genForm.contact_phone,
+        });
+      }
+    } catch (e) {
+      alert(e.message);
+    }
+    setSavingGeneral(false);
+  };
+
+  // ─── Documents API (shared with lead via lead_id) ───
+  const fetchDocuments = useCallback(async () => {
+    if (!leadId) return;
+    setDocsLoading(true);
+    try {
+      const res = await fetch(`${API}/documents/lead/${leadId}`, { headers: { Authorization: `Bearer ${token()}` } });
+      const data = res.ok ? await res.json() : {};
+      setDocuments((data.documents || data || []).map(d => ({
+        id: d.id,
+        name: d.original_filename || d.name,
+        size: d.file_size ? (d.file_size / 1024).toFixed(1) : '?',
+        date: d.created_at ? new Date(d.created_at) : null,
+        category: d.category || 'general',
+        status: d.approval_status || null,
+      })));
+    } catch { setDocuments([]); }
+    setDocsLoading(false);
+  }, [leadId]);
+
+  useEffect(() => { fetchDocuments(); }, [fetchDocuments]);
+
+  const handleDocUpload = async (files) => {
+    if (!files || files.length === 0) return;
+    setDocUploading(true);
+    for (const file of files) {
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('lead_id', leadId);
+        fd.append('category', 'general');
+        await fetch(`${API}/documents/upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token()}` },
+          body: fd,
+        });
+      } catch { /* ignore individual failure */ }
+    }
+    setDocUploading(false);
+    fetchDocuments();
+  };
+
+  const handleDocDownload = async (docId, name) => {
+    try {
+      const res = await fetch(`${API}/documents/${docId}/download`, { headers: { Authorization: `Bearer ${token()}` } });
+      if (!res.ok) throw new Error();
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name || 'document';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch { alert('Download mislukt'); }
   };
 
   /* ─── Contact Methods, Conversations & Emails (shared with lead) ─── */
@@ -468,115 +511,117 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
   };
 
   /* ─── Save Callback ─── */
-  const handleSaveCallback = async () => {
-    if (!callbackDate) return;
-    setCallbackSaving(true);
-    setCallbackMsg(null);
+  // Resolve the email address of the selected internal attendee
+  const attendeeEmail = () => {
+    if (!callbackAttendee) return null;
+    const m = teamMembers.find(t => String(t.id) === String(callbackAttendee));
+    return m?.email || null;
+  };
+
+  // Actually POST the callback/meeting (called directly when there are no invitees,
+  // or from the confirmation modal after the user confirms sending invites).
+  const postCallback = async (payload, kind) => {
+    const setSavingX = kind === 'meeting' ? setMeetingSaving : setCallbackSaving;
+    const setMsgX = kind === 'meeting' ? setMeetingMsg : setCallbackMsg;
+    setSavingX(true);
+    setMsgX(null);
     try {
       const res = await fetch(`${API}/callbacks/`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          lead_id: parseInt(leadId),
-          scheduled_at: new Date(callbackDate).toISOString(),
-          callback_type: 'call',
-          internal_attendees: callbackAttendee ? [parseInt(callbackAttendee)] : [],
-          internal_note: callbackNote || '',
-          add_to_calendar: false,
-        }),
+        headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
-        setCallbackMsg({ type: 'success', text: 'Callback ingepland!' });
-        setCallbackDate('');
-        setCallbackNote('');
-        setCallbackAttendee('');
-      } else {
-        const err = await res.json().catch(() => ({}));
-        setCallbackMsg({ type: 'error', text: err.detail || 'Fout bij opslaan' });
+        setMsgX({ type: 'success', text: kind === 'meeting' ? 'Meeting ingepland!' : 'Callback ingepland!' });
+        if (kind === 'meeting') {
+          setMeetingDate(''); setMeetingLocation(''); setMeetingNote(''); setMeetingExternEmail('');
+        } else {
+          setCallbackDate(''); setCallbackNote(''); setCallbackAttendee(''); setCallbackExternEmail('');
+        }
+        return true;
       }
+      const err = await res.json().catch(() => ({}));
+      setMsgX({ type: 'error', text: err.detail || 'Fout bij opslaan' });
     } catch (e) {
-      setCallbackMsg({ type: 'error', text: 'Netwerk fout' });
+      setMsgX({ type: 'error', text: 'Netwerk fout' });
     } finally {
-      setCallbackSaving(false);
+      setSavingX(false);
     }
+    return false;
+  };
+
+  const handleSaveCallback = async () => {
+    if (!callbackDate) return;
+    const recipients = [];
+    if (callbackExternEmail.trim()) recipients.push(callbackExternEmail.trim());
+    const aEmail = attendeeEmail();
+    if (aEmail) recipients.push(aEmail);
+
+    const payload = {
+      lead_id: parseInt(leadId),
+      scheduled_at: new Date(callbackDate).toISOString(),
+      callback_type: 'call',
+      internal_attendees: callbackAttendee ? [parseInt(callbackAttendee)] : [],
+      invited_user_ids: callbackAttendee ? [parseInt(callbackAttendee)] : [],
+      external_attendees: callbackExternEmail.trim() ? [callbackExternEmail.trim()] : [],
+      internal_note: callbackNote || '',
+      add_to_calendar: recipients.length > 0,
+    };
+
+    if (recipients.length === 0) {
+      // No invitees → no email is sent, just save
+      await postCallback(payload, 'callback');
+      return;
+    }
+    // Invitees present → require explicit confirmation before sending invites
+    setConfirmInvite({
+      kind: 'callback',
+      recipients,
+      message: callbackNote
+        || `Hierbij een uitnodiging voor een telefonisch gesprek met ${prospect.company} op ${new Date(callbackDate).toLocaleString('nl-NL')}.`,
+      payload,
+    });
   };
 
   /* ─── Save Meeting ─── */
   const handleSaveMeeting = async () => {
     if (!meetingDate) return;
-    setMeetingSaving(true);
-    setMeetingMsg(null);
-    try {
-      const res = await fetch(`${API}/callbacks/`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          lead_id: parseInt(leadId),
-          scheduled_at: new Date(meetingDate).toISOString(),
-          callback_type: 'meeting',
-          internal_note: meetingNote || '',
-          external_note: meetingLocation || '',
-          add_to_calendar: false,
-        }),
-      });
-      if (res.ok) {
-        setMeetingMsg({ type: 'success', text: 'Meeting ingepland!' });
-        setMeetingDate('');
-        setMeetingLocation('');
-        setMeetingNote('');
-      } else {
-        const err = await res.json().catch(() => ({}));
-        setMeetingMsg({ type: 'error', text: err.detail || 'Fout bij opslaan' });
-      }
-    } catch (e) {
-      setMeetingMsg({ type: 'error', text: 'Netwerk fout' });
-    } finally {
-      setMeetingSaving(false);
+    const recipients = [];
+    if (meetingExternEmail.trim()) recipients.push(meetingExternEmail.trim());
+    const aEmail = attendeeEmail();
+    if (aEmail) recipients.push(aEmail);
+
+    const payload = {
+      lead_id: parseInt(leadId),
+      scheduled_at: new Date(meetingDate).toISOString(),
+      callback_type: 'meeting',
+      internal_attendees: callbackAttendee ? [parseInt(callbackAttendee)] : [],
+      invited_user_ids: callbackAttendee ? [parseInt(callbackAttendee)] : [],
+      external_attendees: meetingExternEmail.trim() ? [meetingExternEmail.trim()] : [],
+      internal_note: meetingNote || '',
+      external_note: meetingLocation || '',
+      add_to_calendar: recipients.length > 0,
+    };
+
+    if (recipients.length === 0) {
+      await postCallback(payload, 'meeting');
+      return;
     }
+    setConfirmInvite({
+      kind: 'meeting',
+      recipients,
+      message: meetingNote
+        || `Hierbij een uitnodiging voor een meeting met ${prospect.company} op ${new Date(meetingDate).toLocaleString('nl-NL')}${meetingLocation ? ` — locatie: ${meetingLocation}` : ''}.`,
+      payload,
+    });
   };
 
-  /* ─── Assign / Release prospect ─── */
-  const handleAssignProspect = async () => {
-    setOwnerLoading(true);
-    try {
-      const res = await fetch(`${API}/prospects/${leadId}/assign-prospect`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setSalesOwnerId(data.sales_owner_id);
-        setSalesOwnerName(data.sales_owner_name);
-        setSaveMsg({ type: 'success', text: 'Prospect vergrendeld naar jouw lijst' });
-      } else {
-        setSaveMsg({ type: 'error', text: 'Fout bij vergrendelen' });
-      }
-    } catch { setSaveMsg({ type: 'error', text: 'Netwerk fout' }); }
-    setOwnerLoading(false);
-  };
-
-  const handleReleaseProspect = async () => {
-    setOwnerLoading(true);
-    try {
-      const res = await fetch(`${API}/prospects/${leadId}/release-prospect`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      if (res.ok) {
-        setSalesOwnerId(null);
-        setSalesOwnerName(null);
-        setSaveMsg({ type: 'success', text: 'Prospect vrijgegeven naar algemene lijst' });
-      } else {
-        setSaveMsg({ type: 'error', text: 'Fout bij vrijgeven' });
-      }
-    } catch { setSaveMsg({ type: 'error', text: 'Netwerk fout' }); }
-    setOwnerLoading(false);
+  // Called when the user actively confirms sending the invite email
+  const sendInvite = async () => {
+    if (!confirmInvite) return;
+    const payload = { ...confirmInvite.payload, internal_note: confirmInvite.message };
+    const ok = await postCallback(payload, confirmInvite.kind);
+    if (ok) setConfirmInvite(null);
   };
 
   /* ─── Move to Onboarding ─── */
@@ -736,38 +781,6 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
               TaperTrade
             </button>
 
-            {/* Assign / Release prospect */}
-            {(() => {
-              const isAdmin = authUser && (
-                ['admin_pay', 'admin_trade'].includes(authUser.role) || authUser.is_teamleader
-              );
-              const isOwner = authUser && salesOwnerId === authUser.id;
-              if (salesOwnerId && (isOwner || isAdmin)) {
-                return (
-                  <button
-                    onClick={handleReleaseProspect}
-                    disabled={ownerLoading}
-                    title={`Eigenaar: ${salesOwnerName || ''} — klik om vrij te geven`}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-[#eef2fa] text-[#3d61a4] border border-[#3d61a4] rounded-lg text-sm font-medium hover:bg-[#3d61a4] hover:text-white transition-colors disabled:opacity-50"
-                  >
-                    {'🔒'} {salesOwnerName ? salesOwnerName.split(' ')[0] : 'Mijn'} → Vrijgeven
-                  </button>
-                );
-              }
-              if (!salesOwnerId) {
-                return (
-                  <button
-                    onClick={handleAssignProspect}
-                    disabled={ownerLoading}
-                    title="Vergrendel naar jouw prospects"
-                    className="flex items-center gap-1.5 px-3 py-2 bg-[#f3f4f8] text-[#566079] border border-[#cdd1e0] rounded-lg text-sm font-medium hover:bg-[#eef2fa] hover:text-[#3d61a4] hover:border-[#3d61a4] transition-colors disabled:opacity-50"
-                  >
-                    {'🔓'} Vergrendel
-                  </button>
-                );
-              }
-              return null;
-            })()}
             {/* Move to Onboarding button — right aligned */}
             {(taperPayActive || taperTradeActive) && (
               <button
@@ -860,6 +873,16 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
               Communicatie
             </button>
             <button
+              onClick={() => setActiveTab('documenten')}
+              className={`py-4 font-medium text-sm border-b-2 transition-colors ${
+                activeTab === 'documenten'
+                  ? 'text-[#3d61a4] border-[#3d61a4]'
+                  : 'text-[#7b859e] border-transparent hover:text-[#011745]'
+              }`}
+            >
+              Documenten
+            </button>
+            <button
               onClick={() => setActiveTab('bedrijfsinfo')}
               className={`py-4 font-medium text-sm border-b-2 transition-colors ${
                 activeTab === 'bedrijfsinfo'
@@ -877,147 +900,86 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
           {/* ─── Algemeen Tab ─── */}
           {activeTab === 'general' && (
             <div className="space-y-6">
-              {/* Company Info - Inline Editable */}
+              {/* Edit toggle */}
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-[#011745]">Bedrijfsgegevens</h3>
+                {!editGeneral ? (
+                  <button onClick={() => setEditGeneral(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-[#eef2fa]"
+                    style={{ color: '#3d61a4' }}>
+                    <Plus size={14} /> Bewerken
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button onClick={saveGeneral} disabled={savingGeneral}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-sm font-medium disabled:opacity-50"
+                      style={{ backgroundColor: '#3d61a4' }}>
+                      {savingGeneral ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Opslaan
+                    </button>
+                    <button onClick={() => { setEditGeneral(false); setGenForm({
+                      company_name: prospect.company || '', company_website: prospect.website || '',
+                      company_country: prospect.country || '', company_industry: prospect.industry || '',
+                      contact_name: prospect.contactName || '', contact_position: prospect.position || '',
+                      contact_email: prospect.email || '', contact_phone: prospect.phone || '',
+                    }); }}
+                      className="px-3 py-1.5 rounded-lg text-sm" style={{ color: '#7b859e' }}>Annuleer</button>
+                  </div>
+                )}
+              </div>
+
+              {/* Company Info */}
               <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-semibold text-[#011745] mb-2">Bedrijf</label>
-                  {editing === 'company_name' ? (
-                    <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
-                      onBlur={() => { saveField('company_name', editVal); setEditing(null); }}
-                      onKeyDown={e => e.key === 'Enter' && (saveField('company_name', editVal), setEditing(null))}
-                      className="border rounded px-2 py-1 text-sm w-full border-[#3d61a4] outline-none" />
-                  ) : (
-                    <span onClick={() => { setEditing('company_name'); setEditVal(prospect._raw?.company_name || prospect.company || ''); }}
-                      className="text-[#566079] cursor-pointer hover:bg-blue-50 px-1 rounded block min-h-[1.5rem]">
-                      {prospect._raw?.company_name || prospect.company || '—'}
-                    </span>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-[#011745] mb-2">Website</label>
-                  {editing === 'company_website' ? (
-                    <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
-                      onBlur={() => { saveField('company_website', editVal); setEditing(null); }}
-                      onKeyDown={e => e.key === 'Enter' && (saveField('company_website', editVal), setEditing(null))}
-                      className="border rounded px-2 py-1 text-sm w-full border-[#3d61a4] outline-none" />
-                  ) : (
-                    <span onClick={() => { setEditing('company_website'); setEditVal(prospect._raw?.company_website || prospect.website || ''); }}
-                      className="text-[#566079] cursor-pointer hover:bg-blue-50 px-1 rounded block min-h-[1.5rem]">
-                      {prospect._raw?.company_website || prospect.website || '—'}
-                    </span>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-[#011745] mb-2">Land</label>
-                  {editing === 'company_country' ? (
-                    <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
-                      onBlur={() => { saveField('company_country', editVal); setEditing(null); }}
-                      onKeyDown={e => e.key === 'Enter' && (saveField('company_country', editVal), setEditing(null))}
-                      className="border rounded px-2 py-1 text-sm w-full border-[#3d61a4] outline-none" />
-                  ) : (
-                    <span onClick={() => { setEditing('company_country'); setEditVal(prospect._raw?.company_country || prospect.country || ''); }}
-                      className="text-[#566079] cursor-pointer hover:bg-blue-50 px-1 rounded block min-h-[1.5rem]">
-                      {prospect._raw?.company_country || prospect.country || '—'}
-                    </span>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-[#011745] mb-2">Industrie</label>
-                  {editing === 'company_industry' ? (
-                    <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
-                      onBlur={() => { saveField('company_industry', editVal); setEditing(null); }}
-                      onKeyDown={e => e.key === 'Enter' && (saveField('company_industry', editVal), setEditing(null))}
-                      className="border rounded px-2 py-1 text-sm w-full border-[#3d61a4] outline-none" />
-                  ) : (
-                    <span onClick={() => { setEditing('company_industry'); setEditVal(prospect._raw?.company_industry || prospect.industry || ''); }}
-                      className="text-[#566079] cursor-pointer hover:bg-blue-50 px-1 rounded block min-h-[1.5rem]">
-                      {prospect._raw?.company_industry || prospect.industry || '—'}
-                    </span>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-[#011745] mb-2">KVK</label>
-                  {editing === 'kvk_number' ? (
-                    <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
-                      onBlur={() => { saveField('kvk_number', editVal); setEditing(null); }}
-                      onKeyDown={e => e.key === 'Enter' && (saveField('kvk_number', editVal), setEditing(null))}
-                      className="border rounded px-2 py-1 text-sm w-full border-[#3d61a4] outline-none" />
-                  ) : (
-                    <span onClick={() => { setEditing('kvk_number'); setEditVal(prospect._raw?.kvk_number || ''); }}
-                      className="text-[#566079] cursor-pointer hover:bg-blue-50 px-1 rounded block min-h-[1.5rem]">
-                      {prospect._raw?.kvk_number || '—'}
-                    </span>
-                  )}
-                </div>
-                {prospect.broker && (
+                {[
+                  { key: 'company_name', label: 'Bedrijf', view: prospect.company },
+                  { key: 'company_website', label: 'Website', view: prospect.website },
+                  { key: 'company_country', label: 'Land', view: prospect.country },
+                  { key: 'company_industry', label: 'Industrie', view: prospect.industry },
+                ].map(({ key, label, view }) => (
+                  <div key={key}>
+                    <label className="block text-sm font-semibold text-[#011745] mb-2">{label}</label>
+                    {editGeneral ? (
+                      <input value={genForm[key]}
+                        onChange={e => setGenForm(f => ({ ...f, [key]: e.target.value }))}
+                        className="w-full px-3 py-2 bg-[#f7f8fc] border border-[#e8eaf2] rounded-lg text-sm focus:border-[#3d61a4] focus:outline-none"
+                        style={{ color: '#011745' }} />
+                    ) : (
+                      <p className="text-[#566079]">{view || '—'}</p>
+                    )}
+                  </div>
+                ))}
+                {prospect.broker && !editGeneral && (
                   <div>
                     <label className="block text-sm font-semibold text-[#011745] mb-2">Broker</label>
                     <p className="text-[#566079]">{prospect.broker}</p>
                   </div>
                 )}
               </div>
-              {/* Contact Info - Inline Editable */}
+
+              {/* Contact Info */}
               <div className="border-t border-[#e8eaf2] pt-6">
                 <h3 className="font-semibold text-[#011745] mb-4">Contactpersoon</h3>
                 <div className="grid grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-[#566079] mb-1">Naam</label>
-                    {editing === 'contact_name' ? (
-                      <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
-                        onBlur={() => { saveField('contact_name', editVal); setEditing(null); }}
-                        onKeyDown={e => e.key === 'Enter' && (saveField('contact_name', editVal), setEditing(null))}
-                        className="border rounded px-2 py-1 text-sm w-full border-[#3d61a4] outline-none" />
-                    ) : (
-                      <span onClick={() => { setEditing('contact_name'); setEditVal(prospect._raw?.contact_name || prospect.contactName || ''); }}
-                        className="text-[#011745] cursor-pointer hover:bg-blue-50 px-1 rounded block min-h-[1.5rem]">
-                        {prospect._raw?.contact_name || prospect.contactName || '—'}
-                      </span>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-[#566079] mb-1">Functie</label>
-                    {editing === 'contact_position' ? (
-                      <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
-                        onBlur={() => { saveField('contact_position', editVal); setEditing(null); }}
-                        onKeyDown={e => e.key === 'Enter' && (saveField('contact_position', editVal), setEditing(null))}
-                        className="border rounded px-2 py-1 text-sm w-full border-[#3d61a4] outline-none" />
-                    ) : (
-                      <span onClick={() => { setEditing('contact_position'); setEditVal(prospect._raw?.contact_position || prospect.position || ''); }}
-                        className="text-[#011745] cursor-pointer hover:bg-blue-50 px-1 rounded block min-h-[1.5rem]">
-                        {prospect._raw?.contact_position || prospect.position || '—'}
-                      </span>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-[#566079] mb-1">E-mail</label>
-                    {editing === 'contact_email' ? (
-                      <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
-                        onBlur={() => { saveField('contact_email', editVal); setEditing(null); }}
-                        onKeyDown={e => e.key === 'Enter' && (saveField('contact_email', editVal), setEditing(null))}
-                        className="border rounded px-2 py-1 text-sm w-full border-[#3d61a4] outline-none" />
-                    ) : (
-                      <span onClick={() => { setEditing('contact_email'); setEditVal(prospect._raw?.contact_email || prospect.email || ''); }}
-                        className="text-[#011745] cursor-pointer hover:bg-blue-50 px-1 rounded block min-h-[1.5rem]">
-                        {prospect._raw?.contact_email || prospect.email || '—'}
-                      </span>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-[#566079] mb-1">Telefoon</label>
-                    {editing === 'contact_phone' ? (
-                      <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
-                        onBlur={() => { saveField('contact_phone', editVal); setEditing(null); }}
-                        onKeyDown={e => e.key === 'Enter' && (saveField('contact_phone', editVal), setEditing(null))}
-                        className="border rounded px-2 py-1 text-sm w-full border-[#3d61a4] outline-none" />
-                    ) : (
-                      <span onClick={() => { setEditing('contact_phone'); setEditVal(prospect._raw?.contact_phone || prospect.phone || ''); }}
-                        className="text-[#011745] cursor-pointer hover:bg-blue-50 px-1 rounded block min-h-[1.5rem]">
-                        {prospect._raw?.contact_phone || prospect.phone || '—'}
-                      </span>
-                    )}
-                  </div>
+                  {[
+                    { key: 'contact_name', label: 'Naam', view: prospect.contactName },
+                    { key: 'contact_position', label: 'Functie', view: prospect.position },
+                    { key: 'contact_email', label: 'E-mail', view: prospect.email },
+                    { key: 'contact_phone', label: 'Telefoon', view: prospect.phone },
+                  ].map(({ key, label, view }) => (
+                    <div key={key}>
+                      <label className="block text-sm font-medium text-[#566079] mb-1">{label}</label>
+                      {editGeneral ? (
+                        <input value={genForm[key]}
+                          onChange={e => setGenForm(f => ({ ...f, [key]: e.target.value }))}
+                          className="w-full px-3 py-2 bg-[#f7f8fc] border border-[#e8eaf2] rounded-lg text-sm focus:border-[#3d61a4] focus:outline-none"
+                          style={{ color: '#011745' }} />
+                      ) : (
+                        <p className="text-[#011745]">{view || '—'}</p>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
+
               {/* ═══ SCHEDULING SECTION ═══ */}
               <div className="border-t border-[#e8eaf2] pt-6 space-y-6">
                 <h3 className="font-semibold text-[#011745] flex items-center gap-2">
@@ -1359,30 +1321,7 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
               {/* Documents */}
               <div className="border-t border-[#e8eaf2] pt-6">
                 <h3 className="font-semibold text-[#011745] mb-4">Documenten</h3>
-                <div className="space-y-2">
-                  {docsLoading ? (
-                    <p className="text-xs text-[#a4abbe]">Laden...</p>
-                  ) : prospectDocs.length === 0 ? (
-                    <p className="text-sm text-[#a4abbe]">Nog geen documenten geüpload</p>
-                  ) : (
-                    prospectDocs.map(doc => (
-                      <div key={doc.id} className="flex items-center gap-2 p-2 bg-[#f7f8fc] rounded-lg border border-[#e8eaf2]">
-                        <FileText size={14} style={{ color: '#3d61a4' }} />
-                        <span className="text-sm flex-1 truncate" style={{ color: '#011745' }}>{doc.original_filename}</span>
-                        <span className="text-xs" style={{ color: '#a4abbe' }}>{doc.file_size ? (doc.file_size/1024).toFixed(0) + ' KB' : ''}</span>
-                        <button onClick={() => deleteProspectDoc(doc.id)}
-                          className="p-1 rounded hover:bg-red-50 transition-colors">
-                          <Trash2 size={12} style={{ color: '#dc2626' }} />
-                        </button>
-                      </div>
-                    ))
-                  )}
-                  <label className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg border border-dashed border-[#e8eaf2] hover:border-[#3d61a4] transition-colors mt-2">
-                    <Upload size={14} style={{ color: '#3d61a4' }} />
-                    <span className="text-sm" style={{ color: '#3d61a4' }}>Document uploaden</span>
-                    <input type="file" className="hidden" onChange={e => { if (e.target.files[0]) uploadProspectDoc(e.target.files[0]); e.target.value=''; }} />
-                  </label>
-                </div>
+                <DocumentUpload />
               </div>
 
               {/* Strategy */}
@@ -1493,82 +1432,10 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
               {/* Revenue Card */}
               <RevenueCard tfData={tfDetails} />
 
-              {/* TF Revenue Potentie (uit lead fase) */}
-              {(() => {
-                let rows = [];
-                const tfRaw = prospect._raw?.tf_revenue_potential || prospect.tf_revenue_potential;
-                if (Array.isArray(tfRaw)) rows = tfRaw;
-                else if (typeof tfRaw === 'string') { try { rows = JSON.parse(tfRaw); } catch { rows = []; } }
-                if (!rows || rows.length === 0) return null;
-                const fmt = (v) => new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(Number(v) || 0);
-                const totalTf = rows.reduce((sum, r) => sum + (Number(r.bedrag) || 0) * ((Number(r.percentage) || 0) / 100), 0);
-                return (
-                  <div className="rounded-xl p-4 mt-4" style={{ backgroundColor: '#fef3c7', border: '1px solid #fde68a' }}>
-                    <h4 className="text-xs font-semibold uppercase mb-3" style={{ color: '#92400e' }}>
-                      TF Revenue Potentie (uit lead fase)
-                    </h4>
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr style={{ color: '#92400e' }}>
-                          <th className="text-left pb-2 font-semibold">Product</th>
-                          <th className="text-right pb-2 font-semibold">Bedrag (€)</th>
-                          <th className="text-right pb-2 font-semibold">Marge%</th>
-                          <th className="text-right pb-2 font-semibold">Revenue (€)</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#fde68a]">
-                        {rows.map((r, i) => {
-                          const bedrag = Number(r.bedrag) || 0;
-                          const pct = Number(r.percentage) || 0;
-                          return (
-                            <tr key={r.id || i}>
-                              <td className="py-1.5 font-medium" style={{ color: '#011745' }}>{r.product || '—'}</td>
-                              <td className="py-1.5 text-right" style={{ color: '#566079' }}>{fmt(bedrag)}</td>
-                              <td className="py-1.5 text-right" style={{ color: '#566079' }}>{pct.toFixed(2)}%</td>
-                              <td className="py-1.5 text-right font-semibold" style={{ color: '#011745' }}>{fmt(bedrag * pct / 100)}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      <tfoot>
-                        <tr style={{ borderTop: '2px solid #d97706' }}>
-                          <td className="pt-2 font-bold" style={{ color: '#92400e' }}>Totaal</td>
-                          <td colSpan={2} />
-                          <td className="pt-2 text-right font-bold" style={{ color: '#92400e' }}>{fmt(totalTf)}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                );
-              })()}
-
               {/* Documents */}
               <div className="border-t border-[#e8eaf2] pt-6">
                 <h3 className="font-semibold text-[#011745] mb-4">Documenten</h3>
-                <div className="space-y-2">
-                  {docsLoading ? (
-                    <p className="text-xs text-[#a4abbe]">Laden...</p>
-                  ) : prospectDocs.length === 0 ? (
-                    <p className="text-sm text-[#a4abbe]">Nog geen documenten geüpload</p>
-                  ) : (
-                    prospectDocs.map(doc => (
-                      <div key={doc.id} className="flex items-center gap-2 p-2 bg-[#f7f8fc] rounded-lg border border-[#e8eaf2]">
-                        <FileText size={14} style={{ color: '#3d61a4' }} />
-                        <span className="text-sm flex-1 truncate" style={{ color: '#011745' }}>{doc.original_filename}</span>
-                        <span className="text-xs" style={{ color: '#a4abbe' }}>{doc.file_size ? (doc.file_size/1024).toFixed(0) + ' KB' : ''}</span>
-                        <button onClick={() => deleteProspectDoc(doc.id)}
-                          className="p-1 rounded hover:bg-red-50 transition-colors">
-                          <Trash2 size={12} style={{ color: '#dc2626' }} />
-                        </button>
-                      </div>
-                    ))
-                  )}
-                  <label className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg border border-dashed border-[#e8eaf2] hover:border-[#3d61a4] transition-colors mt-2">
-                    <Upload size={14} style={{ color: '#3d61a4' }} />
-                    <span className="text-sm" style={{ color: '#3d61a4' }}>Document uploaden</span>
-                    <input type="file" className="hidden" onChange={e => { if (e.target.files[0]) uploadProspectDoc(e.target.files[0]); e.target.value=''; }} />
-                  </label>
-                </div>
+                <DocumentUpload />
               </div>
             </div>
           )}
@@ -2041,6 +1908,67 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
               )}
             </div>
           )}
+          {/* ─── Documenten Tab ─── */}
+          {activeTab === 'documenten' && (
+            <div className="space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-[#011745]">Documenten</h3>
+                  <p className="text-xs mt-0.5" style={{ color: '#7b859e' }}>
+                    Documenten blijven gekoppeld van lead → prospect → onboarding
+                  </p>
+                </div>
+                <button onClick={() => docInputRef.current?.click()} disabled={docUploading}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-50"
+                  style={{ backgroundColor: '#3d61a4' }}>
+                  {docUploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+                  Uploaden
+                </button>
+                <input ref={docInputRef} type="file" multiple className="hidden"
+                  onChange={e => { handleDocUpload(Array.from(e.target.files || [])); e.target.value = ''; }} />
+              </div>
+
+              {docsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 size={22} className="animate-spin" style={{ color: '#3d61a4' }} />
+                </div>
+              ) : documents.length === 0 ? (
+                <div
+                  onClick={() => docInputRef.current?.click()}
+                  className="flex flex-col items-center justify-center py-12 gap-3 rounded-xl border-2 border-dashed cursor-pointer hover:bg-[#f7f8fc]"
+                  style={{ borderColor: '#cdd1e0' }}>
+                  <FileText size={32} style={{ color: '#cdd1e0' }} />
+                  <p className="text-sm font-medium" style={{ color: '#566079' }}>Nog geen documenten</p>
+                  <p className="text-xs" style={{ color: '#a4abbe' }}>Klik om een bestand te uploaden</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {documents.map(doc => (
+                    <div key={doc.id}
+                      className="flex items-center gap-3 rounded-xl border p-3"
+                      style={{ borderColor: '#e8eaf2', backgroundColor: '#fff' }}>
+                      <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                        style={{ backgroundColor: '#eef2fa' }}>
+                        <FileText size={16} style={{ color: '#3d61a4' }} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate" style={{ color: '#011745' }}>{doc.name}</p>
+                        <p className="text-[11px]" style={{ color: '#a4abbe' }}>
+                          {doc.size} KB{doc.date ? ` • ${doc.date.toLocaleDateString('nl-NL')}` : ''}
+                          {doc.status ? ` • ${doc.status}` : ''}
+                        </p>
+                      </div>
+                      <button onClick={() => handleDocDownload(doc.id, doc.name)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-[#eef2fa] flex items-center gap-1.5"
+                        style={{ color: '#3d61a4' }}>
+                        <ExternalLink size={13} /> Download
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {/* ─── Bedrijfsinfo Tab ─── */}
           {activeTab === 'bedrijfsinfo' && (
             <div className="space-y-5">
@@ -2224,6 +2152,63 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
           </div>
         </div>
       </div>
+
+      {/* ── Invite confirmation modal (shown before any e-mail / calendar invite is sent) ── */}
+      {confirmInvite && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setConfirmInvite(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            <div className="px-5 py-4 flex items-start gap-3" style={{ backgroundColor: '#fff7ed', borderBottom: '1px solid #fed7aa' }}>
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#fed7aa' }}>
+                <Mail size={18} style={{ color: '#b45309' }} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold" style={{ color: '#92400e' }}>Waarschuwing — e-mail versturen</h3>
+                <p className="text-xs mt-0.5" style={{ color: '#b45309' }}>
+                  Wil je de volgende uitnodiging per e-mail versturen aan deze personen?
+                </p>
+              </div>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: '#a4abbe' }}>Ontvangers</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {confirmInvite.recipients.map((r, i) => (
+                    <span key={i} className="text-xs px-2 py-1 rounded-full" style={{ backgroundColor: '#eef2fa', color: '#3d61a4' }}>{r}</span>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: '#a4abbe' }}>Uitnodiging (aanpasbaar)</p>
+                <textarea
+                  value={confirmInvite.message}
+                  onChange={e => setConfirmInvite(ci => ({ ...ci, message: e.target.value }))}
+                  rows={4}
+                  className="w-full px-3 py-2 rounded-lg border text-sm resize-none focus:outline-none focus:border-[#3d61a4]"
+                  style={{ borderColor: '#e8eaf2', color: '#011745' }}
+                />
+                <p className="text-[10px] mt-1" style={{ color: '#a4abbe' }}>
+                  Deze tekst wordt als omschrijving in de Google Calendar-uitnodiging meegestuurd.
+                </p>
+              </div>
+            </div>
+            <div className="px-5 py-4 flex justify-end gap-3" style={{ backgroundColor: '#f7f8fc', borderTop: '1px solid #e8eaf2' }}>
+              <button onClick={() => setConfirmInvite(null)}
+                className="px-4 py-2 rounded-lg text-sm font-medium" style={{ color: '#7b859e' }}>
+                Annuleer
+              </button>
+              <button onClick={sendInvite}
+                disabled={confirmInvite.kind === 'meeting' ? meetingSaving : callbackSaving}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50"
+                style={{ backgroundColor: '#3d61a4' }}>
+                {(confirmInvite.kind === 'meeting' ? meetingSaving : callbackSaving)
+                  ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
+                Verzend uitnodiging
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

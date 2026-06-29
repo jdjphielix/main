@@ -46,14 +46,26 @@ async def create_calendar_event(
 
     # Build title
     company_name = (lead.company_name if lead else None) or f"Lead #{callback.lead_id}"
-    title = f"Callback: {company_name}"
+    type_label = "Meeting" if callback.callback_type == "meeting" else "Callback"
+    title = f"{type_label}: {company_name}"
 
-    # Build attendees list
+    # Build attendees list — owner, invited colleagues, and external invitees (e.g. the client).
+    # With sendUpdates="all" Google emails a calendar invitation to every attendee.
     attendees = [{"email": user.email}]
+    seen = {user.email}
     if invited_users:
         for inv_user in invited_users:
-            if inv_user.email and inv_user.email != user.email:
+            if inv_user.email and inv_user.email not in seen:
                 attendees.append({"email": inv_user.email})
+                seen.add(inv_user.email)
+    # External attendees are stored as a list of email strings (or a single string)
+    _ext = callback.external_attendees
+    if isinstance(_ext, str):
+        _ext = [_ext]
+    for ext_email in (_ext or []):
+        if isinstance(ext_email, str) and ext_email.strip() and ext_email.strip() not in seen:
+            attendees.append({"email": ext_email.strip()})
+            seen.add(ext_email.strip())
 
     # Build description
     description_parts = []

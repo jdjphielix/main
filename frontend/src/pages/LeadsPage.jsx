@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Search, Plus, Filter, Download, Upload, LayoutGrid, List as ListIcon, X, Loader2, RefreshCw, Lock, Globe, AlertTriangle } from 'lucide-react';
 import LeadTable from '../components/leads/LeadTable';
 import LeadKanban from '../components/leads/LeadKanban';
@@ -35,8 +36,6 @@ function mapApiLead(apiLead) {
     documents: [],
     createdAt: apiLead.created_at ? new Date(apiLead.created_at) : new Date(),
     partnerName: apiLead.partner_name || null,
-    revisionStatus: apiLead.revision_status || null,
-    revisionNote: apiLead.revision_note || null,
     // Keep raw API data for updates
     _raw: apiLead,
   };
@@ -100,7 +99,7 @@ export default function LeadsPage() {
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [showNewLeadModal, setShowNewLeadModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [leadsTab, setLeadsTab] = useState('mijn'); // 'algemeen' | 'mijn' | 'closed'
+  const [leadsTab, setLeadsTab] = useState('algemeen'); // 'algemeen' | 'mijn' | 'closed'
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -110,6 +109,29 @@ export default function LeadsPage() {
     assignedTo: [],
     dateRange: { from: null, to: null },
   });
+
+  // Open a specific lead when navigated to with ?open=<leadId> (e.g. from the callback agenda)
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const openId = searchParams.get('open');
+    if (!openId) return;
+    (async () => {
+      try {
+        const token = sessionStorage.getItem('auth_token');
+        const resp = await fetch(`/api/v1/leads/${openId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          setSelectedLead(mapApiLead(data));
+        }
+      } catch { /* ignore */ }
+      // Clear the param so the popup doesn't reopen on every render
+      searchParams.delete('open');
+      setSearchParams(searchParams, { replace: true });
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Duplicate check state (for new lead form)
   const [dupQuery, setDupQuery] = useState('');
@@ -433,7 +455,7 @@ export default function LeadsPage() {
           <div className="flex gap-1 mb-4 bg-[#f3f4f8] rounded-xl p-1 w-fit">
             {!isExtern && (
               <button
-                onClick={() => { setLeadsTab('algemeen'); setSearchQuery(''); setLoading(true); }}
+                onClick={() => { setLeadsTab('algemeen'); setLoading(true); }}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
                   leadsTab === 'algemeen'
                     ? 'bg-white text-[#011745] shadow-sm'
@@ -444,7 +466,7 @@ export default function LeadsPage() {
               </button>
             )}
             <button
-              onClick={() => { setLeadsTab('mijn'); setSearchQuery(''); setLoading(true); }}
+              onClick={() => { setLeadsTab('mijn'); setLoading(true); }}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
                 leadsTab === 'mijn' || isExtern
                   ? 'bg-[#011745] text-white shadow-sm'
@@ -455,7 +477,7 @@ export default function LeadsPage() {
             </button>
             {!isExtern && (
               <button
-                onClick={() => { setLeadsTab('closed'); setSearchQuery(''); setLoading(true); }}
+                onClick={() => { setLeadsTab('closed'); setLoading(true); }}
                 className={`px-4 py-2 text-sm font-medium rounded-lg flex items-center gap-2 transition-colors ${
                   leadsTab === 'closed'
                     ? 'bg-[#dc2626] text-white shadow-sm'
@@ -627,17 +649,11 @@ export default function LeadsPage() {
             if (updatedFields) {
               setLeads(prev => prev.map(l =>
                 l.id === selectedLead?.id
-                  ? { ...l, ...updatedFields, _raw: { ...(l._raw || {}), ...updatedFields } }
+                  ? { ...l, ...updatedFields }
                   : l
               ));
-              // Also update selectedLead so the popup immediately sees new values in _raw
-              setSelectedLead(prev => prev ? {
-                ...prev,
-                ...updatedFields,
-                _raw: { ...(prev._raw || {}), ...updatedFields }
-              } : prev);
             }
-            // Background refresh for full consistency
+            // Also do a background refresh for complex fields
             fetchLeads();
           }}
         />

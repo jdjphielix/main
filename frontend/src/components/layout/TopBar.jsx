@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTranslation } from 'react-i18next';
 import {
   Plus,
   Search,
@@ -25,6 +26,7 @@ import BellijstPopup from '../leads/BellijstPopup';
 const TopBar = ({ sidebarOpen }) => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { t } = useTranslation();
 
   // State management
   const [notificationCount, setNotificationCount] = useState(3);
@@ -152,31 +154,31 @@ const TopBar = ({ sidebarOpen }) => {
   const quickActions = [
     {
       icon: Plus,
-      label: 'Nieuwe Lead',
+      label: t('topbar.newLead', 'Nieuwe Lead'),
       action: 'new-lead',
       color: 'taper-blue',
     },
     {
       icon: Search,
-      label: 'Zoeken',
+      label: t('topbar.search', 'Zoeken'),
       action: 'search',
       color: 'blue-light',
     },
     {
       icon: Phone,
-      label: 'Mijn Bellijst',
+      label: t('topbar.myCallList', 'Mijn Bellijst'),
       action: 'call-list',
       color: 'blue-light',
     },
     {
       icon: Calendar,
-      label: 'Callbacks Vandaag',
+      label: t('topbar.callbacksToday', 'Callbacks Vandaag'),
       action: 'callbacks',
       color: 'blue-light',
     },
     {
       icon: Calendar,
-      label: 'Callback Agenda',
+      label: t('topbar.callbackAgenda', 'Callback Agenda'),
       action: 'callback-agenda',
       color: 'blue-light',
     },
@@ -435,7 +437,7 @@ const TopBar = ({ sidebarOpen }) => {
               >
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-gray-900 dark:text-white">
-                    {'Meldingen'}
+                    {t('topbar.notifications', 'Meldingen')}
                   </h3>
                   {notificationCount > 0 && (
                     <button
@@ -443,7 +445,7 @@ const TopBar = ({ sidebarOpen }) => {
                       className="text-xs font-medium text-blue hover:text-navy transition-colors"
                       style={{ color: '#3d61a4' }}
                     >
-                      {'Alles als gelezen'}
+                      {t('topbar.markAllRead', 'Alles als gelezen')}
                     </button>
                   )}
                 </div>
@@ -490,7 +492,7 @@ const TopBar = ({ sidebarOpen }) => {
                 ) : (
                   <div className="px-4 py-8 text-center">
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {'Geen meldingen'}
+                      {t('topbar.noNotifications', 'Geen meldingen')}
                     </p>
                   </div>
                 )}
@@ -504,7 +506,7 @@ const TopBar = ({ sidebarOpen }) => {
                     className="text-xs font-medium text-blue hover:text-navy transition-colors"
                     style={{ color: '#3d61a4' }}
                   >
-                    {'Alles weergeven'}
+                    {t('topbar.viewAll', 'Alles weergeven')}
                   </button>
                 </div>
               )}
@@ -549,7 +551,7 @@ const TopBar = ({ sidebarOpen }) => {
               >
                 <User size={18} />
                 <span className="text-sm font-medium">
-                  {'Mijn Profiel'}
+                  {t('topbar.myProfile', 'Mijn Profiel')}
                 </span>
               </button>
               <div className="border-t border-gray-100 dark:border-gray-700 my-2" />
@@ -562,7 +564,7 @@ const TopBar = ({ sidebarOpen }) => {
               >
                 <LogOut size={18} />
                 <span className="text-sm font-medium">
-                  {'Uitloggen'}
+                  {t('topbar.logout', 'Uitloggen')}
                 </span>
               </button>
             </div>
@@ -582,9 +584,15 @@ const TopBar = ({ sidebarOpen }) => {
     <CallbackAgendaPopup
       isOpen={callbackAgendaOpen}
       onClose={() => setCallbackAgendaOpen(false)}
-      onOpenLead={(leadId) => {
+      onOpenLead={(leadId, pipelineStage) => {
         setCallbackAgendaOpen(false);
-        navigate(`/leads?open=${leadId}`);
+        // Route to the correct detail view depending on the lead's pipeline stage
+        const prospectStages = ['prospect', 'onboarding', 'onboarding_sales', 'onboarding_backoffice'];
+        if (prospectStages.includes(pipelineStage)) {
+          navigate(`/prospects?open=${leadId}`);
+        } else {
+          navigate(`/leads?open=${leadId}`);
+        }
       }}
     />
 

@@ -42,10 +42,10 @@ async def list_callbacks(
         Callback.is_completed == False,
     )
 
-    # Only show callbacks created by this user
-    query = query.filter(
-        Callback.created_by_id == user_filter_id
-    )
+    # Only the user's OWN callbacks (created by them). Previously this also matched
+    # any callback that merely had internal_attendees set, which leaked other users'
+    # callbacks (e.g. Wouter's) into this list.
+    query = query.filter(Callback.created_by_id == user_filter_id)
 
     if today_only:
         today_start = datetime.combine(date.today(), datetime.min.time()).replace(tzinfo=timezone.utc)
@@ -71,6 +71,7 @@ async def list_callbacks(
                 "contact_phone": cb.lead.contact_phone,
                 "contact_mobile": cb.lead.contact_mobile,
                 "contact_email": cb.lead.contact_email,
+                "pipeline_stage": cb.lead.pipeline_stage,
             }
         if cb.created_by:
             data["created_by_name"] = cb.created_by.full_name

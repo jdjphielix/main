@@ -112,32 +112,75 @@
   }
 }
 
-/* ─── Dark mode global overrides ─────────────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════════
+   DARK MODE OVERRIDES
+   The app uses the fixed Taper palette via both Tailwind utility
+   classes (bg-white, bg-[#f7f8fc], …) and inline styles
+   (style={{ backgroundColor: '#fff' }}). Browsers normalise inline
+   colors to rgb(), so we target both the utility class and the
+   normalised rgb() value. This remaps the light palette to a dark
+   one app-wide without touching every component.
+   ════════════════════════════════════════════════════════════════ */
 .dark {
   color-scheme: dark;
 }
-.dark body {
-  background-color: #0b1020 !important;
-  color: #e8eaf2 !important;
-}
-.dark .bg-white {
+
+/* ── Surfaces / backgrounds ── */
+.dark .bg-white,
+.dark [style*="background-color: rgb(255, 255, 255)"],
+.dark [style*="background: rgb(255, 255, 255)"] {
   background-color: #161d35 !important;
 }
-.dark [class*="bg-white"] {
-  background-color: #161d35 !important;
-}
-.dark .bg-\[\#f7f8fc\] {
+.dark .bg-\[\#f7f8fc\],
+.dark [style*="background-color: rgb(247, 248, 252)"] {
   background-color: #0b1020 !important;
 }
-.dark .bg-\[\#f3f4f8\] {
-  background-color: #161d35 !important;
+.dark .bg-\[\#f3f4f8\],
+.dark [style*="background-color: rgb(243, 244, 248)"] {
+  background-color: #1a2236 !important;
 }
-.dark .border-\[\#e8eaf2\] {
-  border-color: #252f4a !important;
+.dark .bg-\[\#eef2fa\],
+.dark [style*="background-color: rgb(238, 242, 250)"] {
+  background-color: #1f2c4d !important;
 }
-.dark .text-\[\#011745\] {
-  color: #e8eaf2 !important;
+.dark .bg-\[\#f4f6fb\],
+.dark [style*="background-color: rgb(244, 246, 251)"] {
+  background-color: #161d33 !important;
 }
-.dark .text-\[\#566079\] {
-  color: #a4abbe !important;
+
+/* ── Text ── */
+.dark .text-\[\#011745\],
+.dark [style*="color: rgb(1, 23, 69)"] {
+  color: #dde6f5 !important;
+}
+.dark .text-\[\#252f4a\],
+.dark [style*="color: rgb(37, 47, 74)"] {
+  color: #ccd4e6 !important;
+}
+.dark .text-\[\#566079\],
+.dark [style*="color: rgb(86, 96, 121)"] {
+  color: #9aa4ba !important;
+}
+.dark .text-\[\#3b4560\],
+.dark [style*="color: rgb(59, 69, 96)"] {
+  color: #aab3c8 !important;
+}
+
+/* ── Borders ── */
+.dark .border-\[\#e8eaf2\],
+.dark [style*="border-color: rgb(232, 234, 242)"] {
+  border-color: #2b3658 !important;
+}
+
+/* Inputs / textareas / selects keep readable contrast in dark mode */
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: #0f1628 !important;
+  color: #e8eef7 !important;
+  border-color: #2b3658 !important;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #6b7590 !important;
 }
