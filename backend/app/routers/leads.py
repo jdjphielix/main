@@ -15,9 +15,9 @@ from app.middleware.auth import get_current_user
 from app.models.user import User
 from app.models.lead import Lead, LeadStatus, PipelineStage, CustomList, CustomListLead, ProspectData, ClientForecasting, ClientDeal, ComplianceCase, ComplianceCaseDocument
 from app.models.user import PinnedLead
-from app.models.communication import Note, Communication, Document, EmailSync
+from app.models.communication import Note, Communication, Document, EmailSync, ContactMethod
 from app.models.communication import CallLog
-from app.models.notification import ActivityLog
+from app.models.notification import ActivityLog, Notification
 from app.schemas.leads import (
     LeadCreate, LeadUpdate, LeadResponse, LeadListResponse,
     DailyListUpdate, LeadScoreUpdate, SnoozeRequest, BulkActionRequest,
@@ -272,6 +272,22 @@ async def create_lead(
     db.commit()
     db.refresh(lead)
 
+    # Auto-create contact methods from the entered contact so the first one becomes
+    # the primary contact in the lead details (contacts tab is driven by contact_methods).
+    _primary_done = False
+    if lead.contact_email:
+        db.add(ContactMethod(lead_id=lead.id, type="email", value=lead.contact_email,
+                             label=lead.contact_name or "Werk", is_primary=True))
+        _primary_done = True
+    if lead.contact_mobile:
+        db.add(ContactMethod(lead_id=lead.id, type="phone", value=lead.contact_mobile,
+                             label=lead.contact_name or "Mobiel", is_primary=not _primary_done))
+        _primary_done = True
+    if lead.contact_phone and lead.contact_phone != lead.contact_mobile:
+        db.add(ContactMethod(lead_id=lead.id, type="phone", value=lead.contact_phone,
+                             label=lead.contact_name or "Telefoon", is_primary=not _primary_done))
+        _primary_done = True
+
     # Activity log
     db.add(ActivityLog(
         user_id=current_user.id,
@@ -501,6 +517,9 @@ async def send_to_prospect(
     lead.pipeline_stage = PipelineStage.PROSPECT.value
     lead.status = LeadStatus.CONVERTED.value
     lead.prospect_since = datetime.now(timezone.utc)
+    # Defensive: never let a lead lose its sales owner during conversion
+    if not lead.sales_owner_id:
+        lead.sales_owner_id = lead.assigned_user_id or current_user.id
 
     # Create prospect data (get-or-create to avoid duplicates on repeated calls)
     prospect_data = db.query(ProspectData).filter(ProspectData.lead_id == lead.id).first()
@@ -575,6 +594,13 @@ async def send_back_to_onboarding_sales(
     lead.revision_date = datetime.now(timezone.utc)
     lead.revision_by_id = current_user.id
 
+    # Ensure the lead has a sales owner so it reappears in the sales user's views
+    # (the sales onboarding tab filters on sales_owner_id/assigned_user_id).
+    owner_id = lead.sales_owner_id or lead.assigned_user_id
+    if owner_id:
+        lead.sales_owner_id = lead.sales_owner_id or owner_id
+        lead.assigned_user_id = lead.assigned_user_id or owner_id
+
     # Create a visible note so sales can see it
     note = Note(
         lead_id=lead.id,
@@ -582,6 +608,17 @@ async def send_back_to_onboarding_sales(
         content=f"🔄 TERUGGESTUURD door backoffice ({revision_status.replace('_', ' ')}): {note_text}",
     )
     db.add(note)
+
+    # Notify the responsible sales user so it surfaces in the bell / notifications
+    if owner_id:
+        db.add(Notification(
+            user_id=owner_id,
+            title="Dossier teruggestuurd door backoffice",
+            message=f"{lead.company_name or ('Lead #' + str(lead.id))}: {note_text}",
+            notification_type="status_change",
+            entity_type="lead",
+            entity_id=lead.id,
+        ))
 
     db.add(ActivityLog(
         user_id=current_user.id, lead_id=lead.id,

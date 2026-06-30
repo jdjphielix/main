@@ -29,7 +29,7 @@ const TopBar = ({ sidebarOpen }) => {
   const { t } = useTranslation();
 
   // State management
-  const [notificationCount, setNotificationCount] = useState(3);
+  const [notificationCount, setNotificationCount] = useState(0);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);

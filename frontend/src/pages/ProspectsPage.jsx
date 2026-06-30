@@ -33,7 +33,8 @@ function mapApiProspect(api) {
     onCallList: api.on_daily_list || false,
     notes: [],
     documents: [],
-    fxDetails: pd.fx_estimated_volume ? {
+    fxDetails: (pd.fx_estimated_volume || pd.fx_estimated_margin_pct) ? {
+      volume: pd.fx_estimated_volume || 0,
       currencies: (pd.currencies || []).map(c => ({
         inCountry: c.value,
         outCountry: '',
@@ -43,10 +44,11 @@ function mapApiProspect(api) {
       })),
       margin: pd.fx_estimated_margin_pct ? pd.fx_estimated_margin_pct / 100 : 0,
     } : null,
-    tfDetails: (pd.tf_debtor_finance || pd.tf_portfolio_finance || pd.tf_voorraad_finance) ? {
+    tfDetails: (pd.tf_debtor_finance || pd.tf_portfolio_finance || pd.tf_voorraad_finance || pd.tf_estimated_volume || pd.tf_total_financing_need) ? {
       debtorFinance: pd.tf_debtor_finance || false,
       portfolioBasedFinance: pd.tf_portfolio_finance || false,
       voorraadFinancing: pd.tf_voorraad_finance || false,
+      volume: pd.tf_estimated_volume || 0,
       totalFacilityAmount: pd.tf_total_financing_need || 0,
       additionalInfo: pd.tf_additional_info || '',
       margin: pd.tf_estimated_margin_pct ? pd.tf_estimated_margin_pct / 100 : 0,
