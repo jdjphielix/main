@@ -13,7 +13,7 @@ from email.utils import parsedate_to_datetime
 from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models.user import User
-from app.models.lead import Lead, LeadStatus, PipelineStage, CustomList, CustomListLead, ProspectData, ClientForecasting, ClientDeal, ComplianceCase, ComplianceCaseDocument
+from app.models.lead import Lead, LeadStatus, PipelineStage, CustomList, CustomListLead, ProspectData, ClientForecasting, ClientDeal, ComplianceCase, ComplianceCaseDocument, ProductLine
 from app.models.user import PinnedLead
 from app.models.communication import Note, Communication, Document, EmailSync, ContactMethod
 from app.models.communication import CallLog
@@ -1325,6 +1325,133 @@ async def delete_client_deal(
     db.delete(deal)
     db.commit()
     return {"status": "deleted", "id": deal_id}
+
+
+# ── Product Lines (multiple products/volumes per lead) ───────────
+# Additive feature: lets sales add multiple product/volume rows per lead for
+# TaperPay and TaperTrade. Lives on lead_id so it follows prospect → client.
+
+_PRODUCT_VALUES = {"taperpay", "tapertrade"}
+
+
+def _product_line_dict(p):
+    volume = p.volume or 0
+    margin_pct = p.margin_pct or 0
+    return {
+        "id": p.id,
+        "lead_id": p.lead_id,
+        "product": p.product,
+        "name": p.name,
+        "volume": volume,
+        "margin_pct": margin_pct,
+        "note": p.note,
+        # margin_pct is a PERCENT (0.5 = 0,5%) → divide by 100 for revenue
+        "revenue": volume * margin_pct / 100,
+        "created_at": p.created_at.isoformat() if p.created_at else None,
+    }
+
+
+@router.get("/{lead_id}/product-lines")
+async def get_product_lines(
+    lead_id: int,
+    product: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get product lines for a lead, optionally filtered by product (taperpay|tapertrade)."""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    query = db.query(ProductLine).filter(ProductLine.lead_id == lead_id)
+    if product:
+        query = query.filter(ProductLine.product == product)
+    lines = query.order_by(ProductLine.created_at.asc(), ProductLine.id.asc()).all()
+    return [_product_line_dict(p) for p in lines]
+
+
+@router.post("/{lead_id}/product-lines")
+async def add_product_line(
+    lead_id: int,
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Add a product line to a lead."""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    product = (data.get("product") or "").strip().lower()
+    if product not in _PRODUCT_VALUES:
+        raise HTTPException(status_code=400, detail="product moet 'taperpay' of 'tapertrade' zijn")
+
+    line = ProductLine(
+        lead_id=lead_id,
+        product=product,
+        name=data.get("name"),
+        volume=data.get("volume", 0) or 0,
+        margin_pct=data.get("margin_pct", 0) or 0,
+        note=data.get("note"),
+    )
+    db.add(line)
+    db.commit()
+    db.refresh(line)
+    return _product_line_dict(line)
+
+
+@router.put("/{lead_id}/product-lines/{line_id}")
+async def update_product_line(
+    lead_id: int,
+    line_id: int,
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update a product line."""
+    line = db.query(ProductLine).filter(
+        ProductLine.id == line_id,
+        ProductLine.lead_id == lead_id,
+    ).first()
+    if not line:
+        raise HTTPException(status_code=404, detail="Product line not found")
+
+    if "product" in data:
+        product = (data.get("product") or "").strip().lower()
+        if product not in _PRODUCT_VALUES:
+            raise HTTPException(status_code=400, detail="product moet 'taperpay' of 'tapertrade' zijn")
+        line.product = product
+    if "name" in data:
+        line.name = data["name"]
+    if "volume" in data:
+        line.volume = data["volume"] or 0
+    if "margin_pct" in data:
+        line.margin_pct = data["margin_pct"] or 0
+    if "note" in data:
+        line.note = data["note"]
+
+    db.commit()
+    db.refresh(line)
+    return _product_line_dict(line)
+
+
+@router.delete("/{lead_id}/product-lines/{line_id}")
+async def delete_product_line(
+    lead_id: int,
+    line_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a product line."""
+    line = db.query(ProductLine).filter(
+        ProductLine.id == line_id,
+        ProductLine.lead_id == lead_id,
+    ).first()
+    if not line:
+        raise HTTPException(status_code=404, detail="Product line not found")
+    db.delete(line)
+    db.commit()
+    return {"status": "deleted", "id": line_id}
 
 
 # ── Compliance Cases (per client) ────────────────────────────────

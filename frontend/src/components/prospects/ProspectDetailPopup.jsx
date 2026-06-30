@@ -3,6 +3,7 @@ import { X, Plus, Calendar, Users, FileText, MessageSquare, Clock, Check, Loader
 import CurrencySelector from './CurrencySelector';
 import RevenueCard from './RevenueCard';
 import DocumentUpload from '../common/DocumentUpload';
+import ProductLinesSection from '../common/ProductLinesSection';
 
 const API = '/api/v1';
 const token = () => sessionStorage.getItem('auth_token');
@@ -1263,6 +1264,9 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
               {/* Revenue Card */}
               <RevenueCard fxData={fxDetails} />
 
+              {/* Producten / Volumes (meerdere regels, eigen tabel — loopt mee prospect→client) */}
+              <ProductLinesSection leadId={leadId} product="taperpay" accent="#3d61a4" />
+
               {/* Revenue Potentie (uit lead fase — gedetailleerde tabel) */}
               {(() => {
                 let rows = [];
@@ -1431,6 +1435,9 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
 
               {/* Revenue Card */}
               <RevenueCard tfData={tfDetails} />
+
+              {/* Producten / Volumes (meerdere regels, eigen tabel — loopt mee prospect→client) */}
+              <ProductLinesSection leadId={leadId} product="tapertrade" accent="#0a2d6b" />
 
               {/* Documents */}
               <div className="border-t border-[#e8eaf2] pt-6">

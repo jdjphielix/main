@@ -318,6 +318,26 @@ class ClientDeal(Base):
     created_by = relationship("User", foreign_keys=[created_by_id])
 
 
+class ProductLine(Base):
+    """Multiple product/volume lines per lead (TaperPay / TaperTrade).
+
+    Lives on the lead_id so it follows the lead automatically through the
+    pipeline (prospect → client). Each row is one product/volume entry with a
+    margin expressed as a PERCENT (e.g. 0.5 = 0,5%); revenue is computed.
+    """
+    __tablename__ = "product_lines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False, index=True)
+    product = Column(String(20), nullable=False)   # 'taperpay' of 'tapertrade'
+    name = Column(String(255))                      # bv. 'FX EUR/USD' of 'Debtor Finance'
+    volume = Column(Float, default=0)               # jaarvolume EUR
+    margin_pct = Column(Float, default=0)           # marge in PROCENT (bv. 0.5 = 0,5%)
+    note = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    lead = relationship("Lead")
+
+
 class ComplianceCase(Base):
     """Compliance case/ticket linked to a client."""
     __tablename__ = "compliance_cases"

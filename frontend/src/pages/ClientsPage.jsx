@@ -10,6 +10,7 @@ import {
 
 import EmailThreadsPanel from '../components/leads/EmailThreadsPanel';
 import ContactFamilyPopup from '../components/leads/ContactFamilyPopup';
+import ProductLinesSection from '../components/common/ProductLinesSection';
 import { useAuth } from '../contexts/AuthContext';
 
 const token = () => sessionStorage.getItem('auth_token');
@@ -2476,6 +2477,11 @@ export default function ClientsPage({ myClientsOnly = false }) {
                         );
                       })()}
 
+                      {/* Producten / Volumes (meerdere regels, eigen tabel — loopt mee prospect→client) */}
+                      {selectedClient && (
+                        <ProductLinesSection leadId={selectedClient.id} product="taperpay" accent="#3d61a4" />
+                      )}
+
                       {/* Compliance & contract datums */}
                       {(pd?.contract_signed_date || pd?.cdd_next_review_date || pd?.pep_cleared != null) && (
                         <div>
@@ -2628,6 +2634,11 @@ export default function ClientsPage({ myClientsOnly = false }) {
                           <p className="text-sm font-medium" style={{ color: '#566079' }}>TaperTrade niet actief</p>
                           <p className="text-xs mt-1 mb-4" style={{ color: '#a4abbe' }}>Klik op "Bewerken" om TaperTrade te activeren voor deze klant</p>
                         </div>
+                      )}
+
+                      {/* Producten / Volumes (meerdere regels, eigen tabel — loopt mee prospect→client) */}
+                      {selectedClient && (
+                        <ProductLinesSection leadId={selectedClient.id} product="tapertrade" accent="#0a2d6b" />
                       )}
                     </div>
                   )}
