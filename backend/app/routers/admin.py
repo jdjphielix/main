@@ -156,13 +156,26 @@ async def get_pnl_overview(
         .all()
     )
 
+    # Canonical client revenue formula — identical to the sales leaderboard
+    # (users.py) and dashboard helpers: use the spot/hedge split when set,
+    # otherwise fall back to margin_per_year as a flat EUR amount. This keeps
+    # P&L, leaderboard and dashboards consistent.
+    def _fc_revenue(f):
+        vol = f.volume_per_year or 0
+        hedge_pct = f.hedging_pct or 0
+        spot_m = f.spot_margin_pct or 0
+        hedge_m = f.hedging_margin_pct or 0
+        if spot_m == 0 and hedge_pct == 0 and (f.margin_per_year or 0) > 0:
+            return f.margin_per_year or 0
+        return vol * (1 - hedge_pct) * spot_m + vol * hedge_pct * hedge_m
+
     # Per-client aggregation
     clients_data = {}
     total_volume = 0
     total_revenue = 0
 
     for forecast, company_name, lead_id in items:
-        revenue = (forecast.volume_per_year or 0) * (forecast.margin_per_year or 0)
+        revenue = _fc_revenue(forecast)
         volume = forecast.volume_per_year or 0
 
         if lead_id not in clients_data:
@@ -195,7 +208,7 @@ async def get_pnl_overview(
         if pair_key not in pair_aggregation:
             pair_aggregation[pair_key] = {"pair": pair_key, "total_volume": 0, "total_revenue": 0, "client_count": 0}
         pair_aggregation[pair_key]["total_volume"] += (forecast.volume_per_year or 0)
-        pair_aggregation[pair_key]["total_revenue"] += (forecast.volume_per_year or 0) * (forecast.margin_per_year or 0)
+        pair_aggregation[pair_key]["total_revenue"] += _fc_revenue(forecast)
         pair_aggregation[pair_key]["client_count"] += 1
 
     return {
