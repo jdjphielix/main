@@ -209,6 +209,19 @@ async def get_pnl_overview(
 
 # ── Compliance Overview (all clients) ────────────────────────────
 
+def _parse_follow_up_date(value):
+    """Safely parse an ISO date/datetime string into a datetime (None allowed)."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        # Accept both 'YYYY-MM-DD' and full ISO datetime strings
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
 @router.get("/compliance")
 async def list_all_compliance_cases(
     status: Optional[str] = None,
@@ -256,6 +269,7 @@ async def list_all_compliance_cases(
             "created_at": c.created_at.isoformat() if c.created_at else None,
             "updated_at": c.updated_at.isoformat() if c.updated_at else None,
             "resolved_at": c.resolved_at.isoformat() if c.resolved_at else None,
+            "follow_up_date": c.follow_up_date.isoformat() if c.follow_up_date else None,
         }
 
     return {
@@ -264,6 +278,7 @@ async def list_all_compliance_cases(
         "counts": {
             "open": sum(1 for c in cases if c.status == "open"),
             "in_progress": sum(1 for c in cases if c.status == "in_progress"),
+            "pending": sum(1 for c in cases if c.status == "pending"),
             "resolved": sum(1 for c in cases if c.status == "resolved"),
             "closed": sum(1 for c in cases if c.status == "closed"),
         },
@@ -316,6 +331,7 @@ async def get_compliance_case_admin(
         ],
         "created_at": case.created_at.isoformat() if case.created_at else None,
         "updated_at": case.updated_at.isoformat() if case.updated_at else None,
+        "follow_up_date": case.follow_up_date.isoformat() if case.follow_up_date else None,
     }
 
 
@@ -360,10 +376,13 @@ async def update_compliance_case_admin(
     if not case:
         raise HTTPException(status_code=404, detail="Compliance case not found")
 
-    updateable = ["status", "priority", "assigned_to_id", "resolution_notes", "title", "description", "broker"]
+    updateable = ["status", "priority", "assigned_to_id", "resolution_notes", "title", "description", "broker", "follow_up_date"]
     for field in updateable:
         if field in data:
-            setattr(case, field, data[field])
+            if field == "follow_up_date":
+                case.follow_up_date = _parse_follow_up_date(data[field])
+            else:
+                setattr(case, field, data[field])
 
     if data.get("status") == "resolved" and not case.resolved_at:
         case.resolved_at = datetime.now(timezone.utc)

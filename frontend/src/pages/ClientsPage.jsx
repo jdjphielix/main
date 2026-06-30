@@ -38,6 +38,7 @@ const COMMON_CURRENCIES = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'AUD', 'CAD', 'NZD
 const STATUS_COLORS = {
   open: { bg: '#fef3c7', text: '#92400e', label: 'Open' },
   in_progress: { bg: '#eef2fa', text: '#3d61a4', label: 'In Behandeling' },
+  pending: { bg: '#fef9c3', text: '#a16207', label: 'Pending' },
   resolved: { bg: '#f0fdf4', text: '#16a34a', label: 'Opgelost' },
   closed: { bg: '#f3f4f8', text: '#566079', label: 'Gesloten' },
 };
@@ -1806,6 +1807,7 @@ export default function ClientsPage({ myClientsOnly = false }) {
                                       style={{ backgroundColor: sc.bg, color: sc.text }}>
                                       <option value="open">Open</option>
                                       <option value="in_progress">In Behandeling</option>
+                                      <option value="pending">Pending</option>
                                       <option value="resolved">Opgelost</option>
                                       <option value="closed">Gesloten</option>
                                     </select>

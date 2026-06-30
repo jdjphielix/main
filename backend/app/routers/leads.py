@@ -1265,6 +1265,23 @@ async def delete_client_deal(
 
 # ── Compliance Cases (per client) ────────────────────────────────
 
+# Roles allowed to create/edit compliance tickets via the per-lead API.
+# Sales / extern may NOT create or modify tickets.
+COMPLIANCE_WRITE_ROLES = {"backoffice", "admin_pay", "admin_trade"}
+
+
+def _ensure_compliance_writer(user: User):
+    """Raise 403 unless the user may create/edit compliance tickets."""
+    if getattr(user, "is_teamleader", False):
+        return
+    if (user.role or "") in COMPLIANCE_WRITE_ROLES:
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="Geen toestemming om tickets aan te maken of te bewerken.",
+    )
+
+
 @router.get("/{lead_id}/compliance")
 async def get_client_compliance_cases(
     lead_id: int,
@@ -1295,6 +1312,7 @@ async def get_client_compliance_cases(
                 "created_at": c.created_at.isoformat() if c.created_at else None,
                 "updated_at": c.updated_at.isoformat() if c.updated_at else None,
                 "resolved_at": c.resolved_at.isoformat() if c.resolved_at else None,
+                "follow_up_date": c.follow_up_date.isoformat() if c.follow_up_date else None,
             }
             for c in cases
         ],
@@ -1310,6 +1328,7 @@ async def create_compliance_case(
     db: Session = Depends(get_db),
 ):
     """Create a new compliance case for a client."""
+    _ensure_compliance_writer(current_user)
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -1345,6 +1364,7 @@ async def update_compliance_case(
     db: Session = Depends(get_db),
 ):
     """Update a compliance case."""
+    _ensure_compliance_writer(current_user)
     case = db.query(ComplianceCase).filter(
         ComplianceCase.id == case_id,
         ComplianceCase.lead_id == lead_id,
@@ -1356,6 +1376,16 @@ async def update_compliance_case(
     for field in ["title", "description", "status", "priority", "resolution_notes", "assigned_to_id"]:
         if field in data:
             setattr(case, field, data[field])
+
+    if "follow_up_date" in data:
+        value = data["follow_up_date"]
+        if value in (None, ""):
+            case.follow_up_date = None
+        else:
+            try:
+                case.follow_up_date = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                case.follow_up_date = None
 
     if data.get("status") == "resolved" and not case.resolved_at:
         case.resolved_at = datetime.now(timezone.utc)

@@ -72,7 +72,6 @@ class Lead(Base):
     is_locked = Column(Boolean, default=False)  # Locked to user's own list
     locked_by_user_id = Column(Integer, ForeignKey("users.id"))
     sales_owner_id = Column(Integer, ForeignKey("users.id"), index=True)  # Permanent sales owner, set on lock
-    account_manager_id = Column(Integer, ForeignKey("users.id"), index=True)  # Accountmanager assigned to client
 
     # Call tracking
     last_called_at = Column(DateTime(timezone=True))
@@ -125,19 +124,6 @@ class Lead(Base):
     revision_date = Column(DateTime(timezone=True))
     revision_by_id = Column(Integer, ForeignKey("users.id"))
 
-    # Hot prospect
-    is_hot_prospect = Column(Boolean, default=False)
-    hot_prospect_set_at = Column(DateTime(timezone=True))
-    hot_prospect_set_by = Column(Integer, ForeignKey("users.id"))
-
-    # Revenue approval (teamleader approves when lead becomes client)
-    revenue_approved = Column(Boolean, default=False)
-    revenue_approved_by = Column(Integer, ForeignKey("users.id"))
-    revenue_approved_at = Column(DateTime(timezone=True))
-    revenue_approved_value = Column(Float)
-    revenue_approved_note = Column(Text)
-    is_pinned = Column(Boolean, default=False)  # Gecached van PinnedLead tabel
-
     # Dealer assignment
     dealer_id = Column(Integer, ForeignKey("users.id"), index=True)
 
@@ -155,7 +141,6 @@ class Lead(Base):
     locked_by = relationship("User", foreign_keys=[locked_by_user_id])
     sales_owner = relationship("User", foreign_keys=[sales_owner_id])
     dealer = relationship("User", foreign_keys=[dealer_id])
-    account_manager = relationship("User", foreign_keys=[account_manager_id])
     call_logs = relationship("CallLog", back_populates="lead", order_by="CallLog.created_at.desc()")
     notes = relationship("Note", back_populates="lead", order_by="Note.created_at.desc()")
     communications = relationship("Communication", back_populates="lead", order_by="Communication.created_at.desc()")
@@ -172,10 +157,6 @@ class Lead(Base):
     @property
     def sales_owner_name(self):
         return self.sales_owner.full_name if self.sales_owner else None
-
-    @property
-    def account_manager_name(self):
-        return self.account_manager.full_name if self.account_manager else None
 
     # Onboarding checklist (JSON: key->bool for each step)
     onboarding_checklist = Column(JSON)
@@ -242,7 +223,6 @@ class ProspectData(Base):
     tf_closing_fee_pct = Column(Float)          # TF closing fee / afsluitprovisie %
     payment_terms_days = Column(Integer)        # Payment terms in days
     pricing_notes = Column(Text)                # Free-text pricing notes
-    account_plan = Column(Text)                 # Account plan / strategie per client
 
     # Compliance velden
     contract_signed_date = Column(DateTime(timezone=True))
@@ -354,6 +334,7 @@ class ComplianceCase(Base):
     broker = Column(String(50))           # ibanfirst, corpay, ebury, trade_finance
     resolution_notes = Column(Text)
     gmail_thread_id = Column(String(255), index=True)  # Linked Gmail thread
+    follow_up_date = Column(DateTime(timezone=True))  # opvolgdatum voor pending tickets
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

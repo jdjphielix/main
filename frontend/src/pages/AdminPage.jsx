@@ -127,6 +127,7 @@ const ROLE_COLORS = {
 const STATUS_COLORS = {
   open: { bg: '#fef3c7', text: '#92400e', label: 'Open' },
   in_progress: { bg: '#eef2fa', text: '#3d61a4', label: 'In Behandeling' },
+  pending: { bg: '#fef9c3', text: '#a16207', label: 'Pending' },
   waiting_response: { bg: '#fef9c3', text: '#a16207', label: 'Wacht op reactie' },
   with_broker: { bg: '#ede9fe', text: '#6d28d9', label: 'Met broker' },
   resolved: { bg: '#f0fdf4', text: '#16a34a', label: 'Opgelost' },
@@ -1313,6 +1314,8 @@ function ComplianceTab() {
           priority: caseEdit.priority,
           broker: caseEdit.broker,
           resolution_notes: caseEdit.resolution_notes,
+          // Only persist a follow-up date when pending; clear it otherwise
+          follow_up_date: caseEdit.status === 'pending' ? (caseEdit.follow_up_date || null) : null,
         }),
       });
       // Refresh the list and update selected
@@ -1426,10 +1429,11 @@ function ComplianceTab() {
 
       {/* Status summary */}
       {data?.counts && (
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-5 gap-3">
           {[
             { key: 'open', icon: AlertTriangle, count: data.counts.open },
             { key: 'in_progress', icon: Clock, count: data.counts.in_progress },
+            { key: 'pending', icon: Clock, count: data.counts.pending },
             { key: 'resolved', icon: CheckCircle2, count: data.counts.resolved },
             { key: 'closed', icon: Shield, count: data.counts.closed },
           ].map(item => {
@@ -1477,7 +1481,16 @@ function ComplianceTab() {
               </tr>
             </thead>
             <tbody>
-              {data.cases.map(c => {
+              {(statusFilter === 'pending'
+                ? [...data.cases].sort((a, b) => {
+                    // Pending overzicht: eerstvolgende opvolgdatum bovenaan; cases zonder datum onderaan
+                    if (!a.follow_up_date && !b.follow_up_date) return 0;
+                    if (!a.follow_up_date) return 1;
+                    if (!b.follow_up_date) return -1;
+                    return new Date(a.follow_up_date) - new Date(b.follow_up_date);
+                  })
+                : data.cases
+              ).map(c => {
                 const sc = STATUS_COLORS[c.status] || STATUS_COLORS.open;
                 const pc = PRIORITY_COLORS[c.priority] || PRIORITY_COLORS.normal;
                 return (
@@ -1518,11 +1531,18 @@ function ComplianceTab() {
                         style={{ backgroundColor: sc.bg, color: sc.text }}>
                         <option value="open">Open</option>
                         <option value="in_progress">In Behandeling</option>
+                        <option value="pending">Pending</option>
                         <option value="waiting_response">Wacht op reactie</option>
                         <option value="with_broker">Met broker</option>
                         <option value="resolved">Opgelost</option>
                         <option value="closed">Gesloten</option>
                       </select>
+                      {c.status === 'pending' && c.follow_up_date && (
+                        <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: '#fef9c3', color: '#a16207' }}>
+                          <Clock size={10} /> {new Date(c.follow_up_date).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })}
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <span className="text-xs" style={{ color: '#7b859e' }}>
@@ -1642,6 +1662,7 @@ function ComplianceTab() {
                         style={{ color: '#011745' }}>
                         <option value="open">Open</option>
                         <option value="in_progress">In Behandeling</option>
+                        <option value="pending">Pending</option>
                         <option value="waiting_response">Wacht op reactie</option>
                         <option value="with_broker">Met broker</option>
                         <option value="resolved">Opgelost</option>
@@ -1661,6 +1682,19 @@ function ComplianceTab() {
                       </select>
                     </div>
                   </div>
+
+                  {/* Opvolgdatum — only for pending tickets */}
+                  {caseEdit.status === 'pending' && (
+                    <div>
+                      <label className="text-xs font-semibold block mb-1" style={{ color: '#7b859e' }}>Opvolgdatum</label>
+                      <input type="date"
+                        value={caseEdit.follow_up_date ? caseEdit.follow_up_date.slice(0, 10) : ''}
+                        onChange={e => setCaseEdit({ ...caseEdit, follow_up_date: e.target.value || null })}
+                        className="w-full px-3 py-2 rounded-lg border border-[#e8eaf2] text-sm focus:outline-none focus:border-[#3d61a4]"
+                        style={{ color: '#011745' }} />
+                      <p className="text-[10px] mt-1" style={{ color: '#a4abbe' }}>Datum waarop deze pending ticket opgevolgd moet worden.</p>
+                    </div>
+                  )}
 
                   {/* Broker */}
                   <div>
