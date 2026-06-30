@@ -79,17 +79,7 @@ function DraggableLeadCard({ lead, onSelectLead, onToggleDailyList }) {
     >
       {/* Company Name */}
       <h4 className="font-semibold text-[#011745] text-sm mb-1 line-clamp-2">
-        <span className="flex items-center gap-1">
-                  {lead.company}
-                  {lead.revisionStatus && (
-                    <span
-                      title={lead.revisionNote || 'Teruggestuurd'}
-                      className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0"
-                      style={{ backgroundColor: lead.revisionStatus === 'rejected' ? '#dc2626' : '#f97316' }}>
-                      !
-                    </span>
-                  )}
-                </span>
+        {lead.company}
       </h4>
       {lead.partnerName && (() => {
         const pc = partnerColor(lead.partnerName);
@@ -113,6 +103,11 @@ function DraggableLeadCard({ lead, onSelectLead, onToggleDailyList }) {
       {/* Score & Priority Row */}
       <div className="flex items-center justify-between mb-3 pb-3 border-b border-[#e8eaf2]">
         {/* Score Circle */}
+        {lead.score == null ? (
+          <div className="w-10 h-10 flex items-center justify-center" title="Geen score">
+            <span className="text-sm font-bold text-[#a4abbe]">—</span>
+          </div>
+        ) : (
         <div className="relative w-10 h-10">
           <svg className="w-10 h-10 transform -rotate-90" viewBox="0 0 100 100">
             <circle
@@ -144,6 +139,7 @@ function DraggableLeadCard({ lead, onSelectLead, onToggleDailyList }) {
             <span className="text-xs font-bold text-[#011745]">{lead.score}</span>
           </div>
         </div>
+        )}
 
         {/* Priority Dot & Label */}
         <div className="flex items-center gap-2">

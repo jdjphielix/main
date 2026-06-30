@@ -108,8 +108,9 @@ export default function LeadTable({
           bValue = priorityOrder[b.priority];
           break;
         case 'score':
-          aValue = a.score;
-          bValue = b.score;
+          // Treat "no score" (null) as lowest so unscored leads sort to the bottom.
+          aValue = a.score == null ? -1 : a.score;
+          bValue = b.score == null ? -1 : b.score;
           break;
         case 'date':
           aValue = new Date(a.createdAt);
@@ -347,6 +348,9 @@ export default function LeadTable({
                 {/* Score */}
                 <td className="px-6 py-4 text-center">
                   <div className="flex items-center justify-center">
+                    {lead.score == null ? (
+                      <span className="text-sm text-[#a4abbe]" title="Geen score">—</span>
+                    ) : (
                     <div className="relative w-12 h-12">
                       <svg className="w-12 h-12 transform -rotate-90" viewBox="0 0 100 100">
                         <circle
@@ -378,6 +382,7 @@ export default function LeadTable({
                         <span className="text-xs font-bold text-[#011745]">{lead.score}</span>
                       </div>
                     </div>
+                    )}
                   </div>
                 </td>
 

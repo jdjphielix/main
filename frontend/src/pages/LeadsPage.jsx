@@ -26,7 +26,9 @@ function mapApiLead(apiLead) {
     position: apiLead.contact_position || '',
     status: mapStatus(apiLead.status),
     priority: mapPriority(apiLead.priority),
-    score: apiLead.ai_score ? Math.round(apiLead.ai_score * 10) : (apiLead.manual_score ? apiLead.manual_score * 10 : 50),
+    // No fabricated default: when there is neither an AI nor a manual score,
+    // keep it null so the UI can show "—" instead of a misleading 50.
+    score: apiLead.ai_score ? Math.round(apiLead.ai_score * 10) : (apiLead.manual_score ? apiLead.manual_score * 10 : null),
     called: apiLead.is_called || false,
     onDailyList: apiLead.on_daily_list || false,
     lastCall: apiLead.last_called_at ? new Date(apiLead.last_called_at) : null,

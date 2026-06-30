@@ -648,6 +648,70 @@ async def send_to_client(
     lead.client_since_date = datetime.now(timezone.utc)
     lead.revision_status = None
     lead.revision_note = None
+
+    # ── Seed client forecasting from prospect data (idempotent) ──
+    # Only seed when no ClientForecasting rows exist yet for this lead, so we
+    # never overwrite manually-entered forecasting. Scale conversion: prospect
+    # margins are stored as a PERCENT (fx/tf_estimated_margin_pct), while the
+    # client model stores margin_per_year as a FRACTION → divide by 100.
+    existing_fc = db.query(ClientForecasting).filter(
+        ClientForecasting.lead_id == lead.id
+    ).count()
+    if existing_fc == 0 and lead.prospect_data:
+        pd = lead.prospect_data
+        seeded = []
+
+        # FX forecasting → one row per buy/sell currency pair if available,
+        # otherwise a single generic EUR/EUR row.
+        fx_vol = pd.fx_estimated_volume or 0
+        fx_margin_pct = pd.fx_estimated_margin_pct or 0
+        if fx_vol or fx_margin_pct:
+            fx_fraction = fx_margin_pct / 100  # PERCENT → FRACTION
+            buy_ccys = [c.value for c in (pd.currencies or []) if c.currency_type == "buying_currency" and c.value]
+            sell_ccys = [c.value for c in (pd.currencies or []) if c.currency_type == "selling_currency" and c.value]
+            pairs = []
+            if buy_ccys and sell_ccys:
+                # Pair up buy/sell currencies positionally; fall back to first sell ccy.
+                for i, buy in enumerate(buy_ccys):
+                    sell = sell_ccys[i] if i < len(sell_ccys) else sell_ccys[0]
+                    pairs.append((buy.upper(), sell.upper()))
+            elif buy_ccys:
+                pairs = [(b.upper(), "EUR") for b in buy_ccys]
+            elif sell_ccys:
+                pairs = [("EUR", s.upper()) for s in sell_ccys]
+            if not pairs:
+                pairs = [("EUR", "EUR")]
+
+            # Split the total FX volume evenly across pairs so the aggregate
+            # volume matches the prospect estimate.
+            per_pair_vol = (fx_vol / len(pairs)) if pairs else fx_vol
+            for buy, sell in pairs:
+                seeded.append(ClientForecasting(
+                    lead_id=lead.id,
+                    buy_currency=buy,
+                    sell_currency=sell,
+                    volume_per_year=per_pair_vol,
+                    margin_per_year=per_pair_vol * fx_fraction,
+                    notes="Auto-seeded from prospect FX forecast",
+                ))
+
+        # TF forecasting → single generic row when filled.
+        tf_vol = pd.tf_estimated_volume or 0
+        tf_margin_pct = pd.tf_estimated_margin_pct or 0
+        if tf_vol or tf_margin_pct:
+            tf_fraction = tf_margin_pct / 100  # PERCENT → FRACTION
+            seeded.append(ClientForecasting(
+                lead_id=lead.id,
+                buy_currency="EUR",
+                sell_currency="EUR",
+                volume_per_year=tf_vol,
+                margin_per_year=tf_vol * tf_fraction,
+                notes="Auto-seeded from prospect Trade Finance forecast",
+            ))
+
+        for item in seeded:
+            db.add(item)
+
     db.add(ActivityLog(
         user_id=current_user.id, lead_id=lead.id,
         action="moved_to_client", entity_type="lead", entity_id=lead.id,

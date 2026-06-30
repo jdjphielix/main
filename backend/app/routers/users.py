@@ -31,8 +31,6 @@ async def get_my_profile(
         "phone": current_user.phone,
         "role": current_user.role,
         "is_teamleader": current_user.is_teamleader,
-        "is_superuser": getattr(current_user, 'is_superuser', False) or False,
-        "dashboard_period_pref": getattr(current_user, 'dashboard_period_pref', 'month') or 'month',
         "is_active": current_user.status == "active",
         "avatar_url": current_user.avatar_url,
         "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
@@ -375,7 +373,7 @@ async def get_sales_dashboard(
     Get aggregated stats for all users on the sales dashboard.
     Restricted to sales/backoffice/teamleader/admin — not extern or finance.
     """
-    if current_user.role in ('extern', 'backoffice', 'finance') and not current_user.is_teamleader:
+    if current_user.role in ('extern',) and not current_user.is_teamleader:
         raise HTTPException(status_code=403, detail="Geen toegang tot sales dashboard")
     from app.models.lead import Lead, PipelineStage, ClientForecasting, ProspectData
     from app.models.communication import CallLog
@@ -395,10 +393,14 @@ async def get_sales_dashboard(
     user_ids = [u.id for u in dashboard_users]
 
     # ── 2. Lead counts per stage per user (two bulk queries) ──────────────────
-    # Ownership = sales_owner_id OR locked_by_user_id
+    # Ownership credit (single source of truth for this leaderboard):
+    #   sales_owner_id  -> locked_by_user_id  -> assigned_user_id
+    # The assigned_user_id fallback matches the leads-list visibility filter
+    # (assigned_user_id OR sales_owner_id), so an assigned-but-not-locked lead
+    # gets the same credit here as it does in the leads list.
     stage_rows = (
         db.query(
-            func.coalesce(Lead.sales_owner_id, Lead.locked_by_user_id).label("uid"),
+            func.coalesce(Lead.sales_owner_id, Lead.locked_by_user_id, Lead.assigned_user_id).label("uid"),
             Lead.pipeline_stage,
             func.count(Lead.id).label("cnt"),
         )
@@ -407,10 +409,11 @@ async def get_sales_dashboard(
             or_(
                 Lead.sales_owner_id.in_(user_ids),
                 Lead.locked_by_user_id.in_(user_ids),
+                Lead.assigned_user_id.in_(user_ids),
             ),
         )
         .group_by(
-            func.coalesce(Lead.sales_owner_id, Lead.locked_by_user_id),
+            func.coalesce(Lead.sales_owner_id, Lead.locked_by_user_id, Lead.assigned_user_id),
             Lead.pipeline_stage,
         )
         .all()
@@ -439,15 +442,17 @@ async def get_sales_dashboard(
 
     # ── 4. Revenue per user (bulk ProspectData + ClientForecasting) ───────────
     # Prospect revenue (pipeline stage only)
+    # Same ownership credit as the stage counts above:
+    # sales_owner_id -> locked_by_user_id -> assigned_user_id.
     prospect_owner_map = (
         db.query(
-            func.coalesce(Lead.sales_owner_id, Lead.locked_by_user_id).label("uid"),
+            func.coalesce(Lead.sales_owner_id, Lead.locked_by_user_id, Lead.assigned_user_id).label("uid"),
             Lead.id.label("lead_id"),
         )
         .filter(
             Lead.is_deleted == False,
             Lead.pipeline_stage == PipelineStage.PROSPECT.value,
-            or_(Lead.sales_owner_id.in_(user_ids), Lead.locked_by_user_id.in_(user_ids)),
+            or_(Lead.sales_owner_id.in_(user_ids), Lead.locked_by_user_id.in_(user_ids), Lead.assigned_user_id.in_(user_ids)),
         )
         .all()
     )
@@ -456,13 +461,13 @@ async def get_sales_dashboard(
     # Onboarding revenue
     onboard_owner_map = (
         db.query(
-            func.coalesce(Lead.sales_owner_id, Lead.locked_by_user_id).label("uid"),
+            func.coalesce(Lead.sales_owner_id, Lead.locked_by_user_id, Lead.assigned_user_id).label("uid"),
             Lead.id.label("lead_id"),
         )
         .filter(
             Lead.is_deleted == False,
             Lead.pipeline_stage.in_(["onboarding_sales", "onboarding_backoffice"]),
-            or_(Lead.sales_owner_id.in_(user_ids), Lead.locked_by_user_id.in_(user_ids)),
+            or_(Lead.sales_owner_id.in_(user_ids), Lead.locked_by_user_id.in_(user_ids), Lead.assigned_user_id.in_(user_ids)),
         )
         .all()
     )
@@ -486,13 +491,13 @@ async def get_sales_dashboard(
     # Client revenue via ClientForecasting
     client_owner_map = (
         db.query(
-            func.coalesce(Lead.sales_owner_id, Lead.locked_by_user_id).label("uid"),
+            func.coalesce(Lead.sales_owner_id, Lead.locked_by_user_id, Lead.assigned_user_id).label("uid"),
             Lead.id.label("lead_id"),
         )
         .filter(
             Lead.is_deleted == False,
             Lead.pipeline_stage == PipelineStage.CLIENT.value,
-            or_(Lead.sales_owner_id.in_(user_ids), Lead.locked_by_user_id.in_(user_ids)),
+            or_(Lead.sales_owner_id.in_(user_ids), Lead.locked_by_user_id.in_(user_ids), Lead.assigned_user_id.in_(user_ids)),
         )
         .all()
     )
@@ -515,25 +520,7 @@ async def get_sales_dashboard(
             else:
                 client_rev[uid] = client_rev.get(uid, 0) + vol * (1 - hedge_pct) * spot_m + vol * hedge_pct * hedge_m
 
-
-    # Bulk: hot prospect counts per sales owner
-    hot_rows = (
-        db.query(
-            Lead.sales_owner_id,
-            func.count(Lead.id).label("cnt"),
-        )
-        .filter(
-            Lead.is_hot_prospect == True,
-            Lead.is_deleted == False,
-            Lead.pipeline_stage == PipelineStage.PROSPECT.value,
-            Lead.sales_owner_id.in_(user_ids),
-        )
-        .group_by(Lead.sales_owner_id)
-        .all()
-    )
-    hot_counts: dict = {r.sales_owner_id: r.cnt for r in hot_rows}
-
-        # ── 5. Assemble results ───────────────────────────────────────────────────
+    # ── 5. Assemble results ───────────────────────────────────────────────────
     results = []
     for u in dashboard_users:
         sc = stage_counts.get(u.id, {})
@@ -547,7 +534,6 @@ async def get_sales_dashboard(
             "prospects_count": sc.get(PipelineStage.PROSPECT.value, 0),
             "onboarding_count": sc.get("onboarding_sales", 0) + sc.get("onboarding_backoffice", 0),
             "clients_count": sc.get(PipelineStage.CLIENT.value, 0),
-            "hot_prospects_count": hot_counts.get(u.id, 0),
             "call_count": calls,
             "total_call_duration_seconds": dur,
             "pipeline_revenue": round(pipeline_rev.get(u.id, 0), 2),

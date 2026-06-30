@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Check, X, Flame } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 import {
   DndContext,
   closestCorners,
@@ -21,7 +21,7 @@ import { CSS } from '@dnd-kit/utilities';
 const STATUSES = ['Discovery', 'In Negotiation', 'Proposal Sent', 'Onboarding'];
 
 // Draggable Prospect Card Component
-function DraggableProspectCard({ prospect, onSelectProspect, getPriorityBorder, onToggleHot }) {
+function DraggableProspectCard({ prospect, onSelectProspect, getPriorityBorder }) {
   const {
     attributes,
     listeners,
@@ -37,8 +37,6 @@ function DraggableProspectCard({ prospect, onSelectProspect, getPriorityBorder, 
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const hasRevenue = (prospect.revenuePotential || 0) > 0;
-
   return (
     <div
       ref={setNodeRef}
@@ -48,36 +46,13 @@ function DraggableProspectCard({ prospect, onSelectProspect, getPriorityBorder, 
       onClick={() => onSelectProspect(prospect)}
       className={`${getPriorityBorder(prospect.priority)} bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing border border-[#e8eaf2] ${
         isDragging ? 'ring-2 ring-[#3d61a4]' : ''
-      } ${prospect.isHot ? 'ring-1 ring-orange-200' : ''}`}
+      }`}
     >
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <h4 className="font-semibold text-[#011745] text-sm line-clamp-2">
-            {prospect.isHot && <span className="text-orange-500 mr-1 text-xs">🔥</span>}
-            {prospect.company}
-          </h4>
-          <p className="text-xs text-[#7b859e] mt-1">{prospect.contactName}</p>
-        </div>
-        {onToggleHot && (
-          <button
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleHot(prospect.id);
-            }}
-            disabled={!prospect.isHot && !hasRevenue}
-            title={prospect.isHot ? 'Hot prospect — klik om te verwijderen' : (hasRevenue ? 'Markeer als hot prospect' : 'Stel eerst FX of TF revenue in')}
-            className={`flex-shrink-0 p-1 rounded transition-all ${
-              prospect.isHot
-                ? 'text-orange-500 bg-orange-50 hover:bg-orange-100'
-                : hasRevenue
-                  ? 'text-[#cdd1e0] hover:text-orange-400 hover:bg-orange-50'
-                  : 'text-[#e8eaf2] cursor-not-allowed'
-            }`}
-          >
-            <Flame size={15} fill={prospect.isHot ? 'currentColor' : 'none'} />
-          </button>
-        )}
+      <div className="mb-3">
+        <h4 className="font-semibold text-[#011745] text-sm line-clamp-2">
+          {prospect.company}
+        </h4>
+        <p className="text-xs text-[#7b859e] mt-1">{prospect.contactName}</p>
       </div>
 
       {/* Service Badges */}
@@ -122,6 +97,9 @@ function DraggableProspectCard({ prospect, onSelectProspect, getPriorityBorder, 
       {/* Score */}
       <div className="flex items-center justify-between pt-2 border-t border-[#e8eaf2]">
         <span className="text-xs font-medium text-[#566079]">Score</span>
+        {prospect.score == null ? (
+          <span className="text-xs font-semibold text-[#a4abbe]" title="Geen score">—</span>
+        ) : (
         <div className="flex items-center gap-1">
           <div className="h-2 w-16 bg-[#e8eaf2] rounded-full overflow-hidden">
             <div
@@ -133,6 +111,7 @@ function DraggableProspectCard({ prospect, onSelectProspect, getPriorityBorder, 
             {prospect.score}
           </span>
         </div>
+        )}
       </div>
     </div>
   );
@@ -147,7 +126,6 @@ function DroppableColumn({
   getStatusTextColor,
   getPriorityBorder,
   activeId,
-  onToggleHot,
 }) {
   const { setNodeRef, isOver } = useSortable({
     id: status,
@@ -193,7 +171,6 @@ function DroppableColumn({
                 prospect={prospect}
                 onSelectProspect={onSelectProspect}
                 getPriorityBorder={getPriorityBorder}
-                onToggleHot={onToggleHot}
               />
             ))
           )}
@@ -207,7 +184,6 @@ export default function ProspectKanban({
   prospects,
   onSelectProspect,
   onStatusChange,
-  onToggleHot,
 }) {
   const [activeId, setActiveId] = useState(null);
 
@@ -326,7 +302,6 @@ export default function ProspectKanban({
               getStatusTextColor={getStatusTextColor}
               getPriorityBorder={getPriorityBorder}
               activeId={activeId}
-              onToggleHot={onToggleHot}
             />
           ))}
         </div>

@@ -22,7 +22,8 @@ function mapApiProspect(api) {
     position: api.contact_position || '',
     status: mapProspectStatus(api.status),
     priority: mapPriority(api.priority),
-    score: api.ai_score ? Math.round(api.ai_score * 10) : (api.manual_score ? api.manual_score * 10 : 50),
+    // No fabricated default: null when no AI/manual score so the UI shows "—".
+    score: api.ai_score ? Math.round(api.ai_score * 10) : (api.manual_score ? api.manual_score * 10 : null),
     broker: pd.broker || api.broker || '',
     strategy: pd.strategy_notes || '',
     taperPayActive: pd.taperpay_active || false,

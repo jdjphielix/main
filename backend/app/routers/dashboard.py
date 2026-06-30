@@ -10,9 +10,9 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models.user import User
-from app.models.lead import Lead, PipelineStage, LeadStatus
+from app.models.lead import Lead, PipelineStage, LeadStatus, ClientForecasting, ProspectData
 from app.models.communication import CallLog
-from app.models.notification import ActivityLog, TeamTarget, ManualAchievement
+from app.models.notification import ActivityLog, TeamTarget
 
 router = APIRouter()
 
@@ -100,27 +100,13 @@ async def get_kpis(
         calls_q = calls_q.filter(CallLog.user_id == current_user.id)
     calls = calls_q.scalar() or 0
 
-    # Total leads in pipeline (snapshot — not period filtered: this is a current state count)
-    # Separately: new leads created in period
+    # Total leads
     leads_q = db.query(func.count(Lead.id)).filter(Lead.is_deleted == False)
     if is_personal:
         leads_q = leads_q.filter(
             or_(Lead.assigned_user_id == current_user.id, Lead.sales_owner_id == current_user.id)
         )
     leads_assigned = leads_q.scalar() or 0
-
-    # New leads created in this period
-    new_leads_q = db.query(func.count(Lead.id)).filter(
-        Lead.is_deleted == False,
-        Lead.created_at >= start,
-        Lead.created_at <= end,
-        Lead.pipeline_stage == PipelineStage.LEAD.value,
-    )
-    if is_personal:
-        new_leads_q = new_leads_q.filter(
-            or_(Lead.assigned_user_id == current_user.id, Lead.sales_owner_id == current_user.id)
-        )
-    new_leads_in_period = new_leads_q.scalar() or 0
 
     # Leads by stage
     by_stage = {}
@@ -136,6 +122,10 @@ async def get_kpis(
         by_stage[stage.value] = q.scalar() or 0
 
     # Conversion rate
+    # Consistent definition: (# leads that ever converted, i.e. pipeline_stage
+    # >= prospect) / (total # leads), so teller and noemer share the same base
+    # and the rate can never exceed 100%. `contacted` (is_called) is kept as a
+    # separate informational metric in the response.
     contacted_q = db.query(func.count(Lead.id)).filter(
         Lead.is_called == True,
         Lead.is_deleted == False,
@@ -149,6 +139,9 @@ async def get_kpis(
         ]),
         Lead.is_deleted == False,
     )
+    total_leads_q = db.query(func.count(Lead.id)).filter(
+        Lead.is_deleted == False,
+    )
     if is_personal:
         contacted_q = contacted_q.filter(
             or_(Lead.assigned_user_id == current_user.id, Lead.sales_owner_id == current_user.id)
@@ -156,10 +149,15 @@ async def get_kpis(
         converted_q = converted_q.filter(
             or_(Lead.assigned_user_id == current_user.id, Lead.sales_owner_id == current_user.id)
         )
+        total_leads_q = total_leads_q.filter(
+            or_(Lead.assigned_user_id == current_user.id, Lead.sales_owner_id == current_user.id)
+        )
 
     contacted = contacted_q.scalar() or 0
     converted = converted_q.scalar() or 0
-    conversion_rate = (converted / contacted * 100) if contacted > 0 else 0
+    total_leads = total_leads_q.scalar() or 0
+    conversion_rate = (converted / total_leads * 100) if total_leads > 0 else 0
+    conversion_rate = min(conversion_rate, 100)
 
     return {
         "period": period,
@@ -170,7 +168,6 @@ async def get_kpis(
         "converted": converted,
         "conversion_rate": round(conversion_rate, 2),
         "is_personal": is_personal,
-        "new_leads_in_period": new_leads_in_period,
     }
 
 
@@ -262,6 +259,69 @@ async def get_activity_feed(
 
 # ─── Targets ───
 
+def _client_forecasting_revenue(item: ClientForecasting) -> float:
+    """Annual revenue for a single client forecasting row.
+
+    Mirrors the proven calculation used in the sales leaderboard (users.py):
+    margins are FRACTIONS here; `margin_per_year` is the legacy flat-EUR field
+    used only when no spot/hedge split is configured.
+    """
+    vol = item.volume_per_year or 0
+    hedge_pct = item.hedging_pct or 0
+    spot_m = item.spot_margin_pct or 0
+    hedge_m = item.hedging_margin_pct or 0
+    if spot_m == 0 and hedge_pct == 0 and (item.margin_per_year or 0) > 0:
+        return item.margin_per_year or 0
+    return vol * (1 - hedge_pct) * spot_m + vol * hedge_pct * hedge_m
+
+
+def _user_revenue_sum(user_id: int, db: Session) -> float:
+    """Total revenue attributed to a user across their pipeline + client leads.
+
+    Reuses the same revenue sources as the leaderboard (users.py): prospect/
+    onboarding revenue from ProspectData estimates, client revenue from
+    ClientForecasting. Ownership = sales_owner_id OR assigned_user_id so a
+    user gets credit consistently with the leads list.
+    """
+    owner = or_(Lead.sales_owner_id == user_id, Lead.assigned_user_id == user_id)
+
+    total = 0.0
+
+    # Pipeline (prospect + onboarding) revenue from ProspectData estimates
+    pd_lead_ids = [
+        r.lead_id for r in db.query(ProspectData.lead_id)
+        .join(Lead, Lead.id == ProspectData.lead_id)
+        .filter(
+            Lead.is_deleted == False,
+            owner,
+            Lead.pipeline_stage.in_([
+                PipelineStage.PROSPECT.value,
+                PipelineStage.ONBOARDING_SALES.value,
+                PipelineStage.ONBOARDING_BACKOFFICE.value,
+            ]),
+        ).all()
+    ]
+    if pd_lead_ids:
+        for pd in db.query(ProspectData).filter(ProspectData.lead_id.in_(pd_lead_ids)).all():
+            total += (pd.fx_estimated_revenue or 0) + (pd.tf_estimated_revenue or 0)
+
+    # Client revenue from ClientForecasting
+    client_lead_ids = [
+        r.id for r in db.query(Lead.id).filter(
+            Lead.is_deleted == False,
+            owner,
+            Lead.pipeline_stage == PipelineStage.CLIENT.value,
+        ).all()
+    ]
+    if client_lead_ids:
+        for item in db.query(ClientForecasting).filter(
+            ClientForecasting.lead_id.in_(client_lead_ids)
+        ).all():
+            total += _client_forecasting_revenue(item)
+
+    return total
+
+
 def _calculate_target_progress(target: TeamTarget, user_id: int, db: Session, now: datetime) -> int:
     """Calculate progress for a specific target and user."""
     start = _get_period_start(target.period or "weekly", now)
@@ -274,16 +334,33 @@ def _calculate_target_progress(target: TeamTarget, user_id: int, db: Session, no
         ).scalar() or 0
 
     elif target.target_type == "conversions":
-        # Filter op prospect_since: wanneer de lead écht prospect werd (niet aanmaakdatum)
+        # A "conversion" = a lead that reached prospect (or beyond) within the
+        # period. Count on prospect_since (when the conversion happened) rather
+        # than created_at, and include every stage >= prospect — a lead that
+        # already moved on to onboarding/client still converted in-period.
         progress = db.query(func.count(Lead.id)).filter(
             or_(Lead.assigned_user_id == user_id, Lead.sales_owner_id == user_id),
-            Lead.pipeline_stage == PipelineStage.PROSPECT.value,
+            Lead.pipeline_stage.in_([
+                PipelineStage.PROSPECT.value,
+                PipelineStage.ONBOARDING_SALES.value,
+                PipelineStage.ONBOARDING_BACKOFFICE.value,
+                PipelineStage.CLIENT.value,
+            ]),
+            Lead.prospect_since != None,
             Lead.prospect_since >= start,
             Lead.is_deleted == False,
         ).scalar() or 0
 
+    elif target.target_type == "revenue":
+        # Sum of pipeline + client revenue attributed to this user. Rounded to
+        # an int to match the int return contract of this helper.
+        progress = int(round(_user_revenue_sum(user_id, db)))
+
     elif target.target_type == "pipeline_value":
-        # Count leads in prospect+ stages owned by user
+        # NOTE: despite the "value" name, this target historically tracks the
+        # *count* of leads in prospect+ stages owned by the user, and the UI
+        # renders it as such. Kept as a count to avoid a UI break. For an
+        # actual revenue figure use the dedicated "revenue" target type above.
         progress = db.query(func.count(Lead.id)).filter(
             or_(Lead.assigned_user_id == user_id, Lead.sales_owner_id == user_id),
             Lead.pipeline_stage.in_([
@@ -304,21 +381,11 @@ def _calculate_target_progress(target: TeamTarget, user_id: int, db: Session, no
         ).scalar() or 0
 
     elif target.target_type == "clients_won":
-        # Filter op client_since_date zodat alleen klanten van deze periode tellen
         progress = db.query(func.count(Lead.id)).filter(
             or_(Lead.assigned_user_id == user_id, Lead.sales_owner_id == user_id),
             Lead.pipeline_stage == PipelineStage.CLIENT.value,
-            Lead.client_since_date >= start,
             Lead.is_deleted == False,
         ).scalar() or 0
-
-    # Add manual achievements for this period
-    manual = db.query(ManualAchievement).filter(
-        ManualAchievement.user_id == user_id,
-        ManualAchievement.target_type == target.target_type,
-        ManualAchievement.period_date >= start.date() if hasattr(start, 'date') else start,
-    ).all()
-    progress += sum(a.amount for a in manual)
 
     return progress
 
@@ -400,12 +467,6 @@ async def get_targets(
         ).all()
 
         # Group by target_type + period
-        # Pre-load all users to avoid N+1 queries in the loop below
-        _target_user_ids = list({t.user_id for t in targets if t.user_id})
-        _users_map = {
-            u.id: u for u in db.query(User).filter(User.id.in_(_target_user_ids)).all()
-        } if _target_user_ids else {}
-
         grouped = {}
         for target in targets:
             key = f"{target.target_type}_{target.period}"
@@ -422,7 +483,7 @@ async def get_targets(
                 progress = _calculate_target_progress(target, target.user_id, db, now)
                 grouped[key]["total_target_value"] += target.target_value
                 grouped[key]["total_progress"] += progress
-                user = _users_map.get(target.user_id)
+                user = db.query(User).filter(User.id == target.user_id).first()
                 grouped[key]["user_targets"].append({
                     "id": target.id,
                     "user_id": target.user_id,
@@ -432,7 +493,11 @@ async def get_targets(
                     "percentage": round((progress / target.target_value * 100), 1) if target.target_value else 0,
                 })
             else:
-                # Team-wide target: aggregate across all sales users
+                # Team-wide target (target.user_id is NULL): the target_value is
+                # defined PER sales user, so the team total is value × headcount.
+                # Progress is summed per user with the SAME owner definition used
+                # in _calculate_target_progress, keeping numerator and denominator
+                # on the same per-user basis (consistent team aggregate).
                 sales_ids = _get_sales_user_ids(db)
                 total_progress = 0
                 for uid in sales_ids:
@@ -713,323 +778,4 @@ async def get_daily_list(
             for l in leads
         ],
         "total": len(leads),
-    }
-
-
-# ─── Manual Achievements ───
-
-@router.post("/targets/{target_id}/achievement")
-async def register_achievement(
-    target_id: int,
-    data: dict,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Teamleader/admin registers a manual achievement for a user."""
-    if not current_user.is_teamleader and current_user.role not in ("admin_pay", "admin_trade"):
-        raise HTTPException(status_code=403, detail="Alleen teamleaders/admins kunnen achievements registreren")
-
-    target = db.query(TeamTarget).filter(TeamTarget.id == target_id).first()
-    if not target:
-        raise HTTPException(status_code=404, detail="Target niet gevonden")
-
-    user_id = data.get("user_id") or (target.user_id if target.user_id else current_user.id)
-    amount = data.get("amount", 1)
-    note = data.get("note", "")
-
-    achievement = ManualAchievement(
-        target_id=target_id,
-        user_id=user_id,
-        registered_by=current_user.id,
-        amount=amount,
-        note=note,
-        target_type=target.target_type,
-        period_date=datetime.now(timezone.utc).date(),
-    )
-    db.add(achievement)
-    db.commit()
-    db.refresh(achievement)
-    return {"status": "ok", "achievement_id": achievement.id, "amount": amount}
-
-
-@router.get("/targets/{target_id}/achievements")
-async def get_achievements(
-    target_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    achievements = db.query(ManualAchievement).filter(
-        ManualAchievement.target_id == target_id
-    ).order_by(ManualAchievement.created_at.desc()).limit(50).all()
-
-    return {"achievements": [
-        {
-            "id": a.id,
-            "user_id": a.user_id,
-            "amount": a.amount,
-            "note": a.note,
-            "created_at": a.created_at.isoformat(),
-            "target_type": a.target_type,
-        }
-        for a in achievements
-    ]}
-
-
-# â”€â”€â”€ Hot Prospects (for teamleader/admin dashboard widget) â”€â”€â”€
-
-@router.get("/hot-prospects")
-async def get_hot_prospects(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Get all hot prospects. Teamleader sees team's, sales sees own."""
-    from sqlalchemy.orm import joinedload as jl
-    from app.models.lead import ProspectData
-
-    query = db.query(Lead).options(
-        jl(Lead.prospect_data),
-        jl(Lead.sales_owner),
-    ).filter(
-        Lead.is_hot_prospect == True,
-        Lead.pipeline_stage == PipelineStage.PROSPECT.value,
-        Lead.is_deleted == False,
-    )
-
-    is_personal = _is_sales_only(current_user)
-    if is_personal:
-        query = query.filter(
-            or_(Lead.assigned_user_id == current_user.id, Lead.sales_owner_id == current_user.id)
-        )
-    elif not (current_user.is_superuser or _is_admin(current_user)):
-        team_ids = db.query(User.id).filter(
-            User.team_leader_id == current_user.id,
-            User.status == "active",
-        ).all()
-        team_ids = [u[0] for u in team_ids] + [current_user.id]
-        query = query.filter(
-            or_(Lead.sales_owner_id.in_(team_ids), Lead.assigned_user_id.in_(team_ids))
-        )
-
-    prospects = query.order_by(Lead.hot_prospect_set_at.desc()).all()
-
-    result = []
-    for p in prospects:
-        pd = p.prospect_data
-        fx_rev = (pd.fx_estimated_revenue or 0) if pd else 0
-        tf_rev = (pd.tf_estimated_revenue or 0) if pd else 0
-        result.append({
-            "id": p.id,
-            "company_name": p.company_name,
-            "sales_owner_name": p.sales_owner.full_name if p.sales_owner else None,
-            "sales_owner_id": p.sales_owner_id,
-            "fx_estimated_revenue": fx_rev,
-            "tf_estimated_revenue": tf_rev,
-            "total_revenue": fx_rev + tf_rev,
-            "hot_prospect_set_at": p.hot_prospect_set_at,
-            "prospect_since": p.prospect_since,
-        })
-
-    return {"hot_prospects": result, "total": len(result)}
-
-
-# â”€â”€â”€ Revenue Pipeline (ProspectData based) â”€â”€â”€
-
-@router.get("/revenue-pipeline")
-async def get_revenue_pipeline(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Aggregate revenue from ProspectData across pipeline stages."""
-    from sqlalchemy.orm import joinedload as jl
-    from app.models.lead import ProspectData
-
-    is_personal = _is_sales_only(current_user)
-
-    stages = [
-        PipelineStage.PROSPECT.value,
-        PipelineStage.ONBOARDING_SALES.value,
-        PipelineStage.ONBOARDING_BACKOFFICE.value,
-        PipelineStage.CLIENT.value,
-    ]
-
-    query = db.query(Lead).options(jl(Lead.prospect_data)).filter(
-        Lead.pipeline_stage.in_(stages),
-        Lead.is_deleted == False,
-    )
-    if is_personal:
-        query = query.filter(
-            or_(Lead.assigned_user_id == current_user.id, Lead.sales_owner_id == current_user.id)
-        )
-    elif not (current_user.is_superuser or _is_admin(current_user)) and current_user.is_teamleader:
-        team_ids = db.query(User.id).filter(
-            User.team_leader_id == current_user.id,
-            User.status == "active",
-        ).all()
-        team_ids = [u[0] for u in team_ids] + [current_user.id]
-        query = query.filter(
-            or_(Lead.sales_owner_id.in_(team_ids), Lead.assigned_user_id.in_(team_ids))
-        )
-
-    leads = query.all()
-
-    by_stage = {s: {"count": 0, "fx_revenue": 0.0, "tf_revenue": 0.0, "total": 0.0} for s in stages}
-    for lead in leads:
-        pd = lead.prospect_data
-        fx = (pd.fx_estimated_revenue or 0) if pd else 0
-        tf = (pd.tf_estimated_revenue or 0) if pd else 0
-        s = lead.pipeline_stage
-        if s in by_stage:
-            by_stage[s]["count"] += 1
-            by_stage[s]["fx_revenue"] += fx
-            by_stage[s]["tf_revenue"] += tf
-            by_stage[s]["total"] += fx + tf
-
-    total_pipeline = sum(v["total"] for v in by_stage.values())
-    hot_total = 0
-    for lead in leads:
-        if lead.is_hot_prospect and lead.pipeline_stage == PipelineStage.PROSPECT.value:
-            pd = lead.prospect_data
-            fx = (pd.fx_estimated_revenue or 0) if pd else 0
-            tf = (pd.tf_estimated_revenue or 0) if pd else 0
-            hot_total += fx + tf
-
-    return {
-        "by_stage": by_stage,
-        "total_pipeline": total_pipeline,
-        "hot_prospects_total": hot_total,
-        "is_personal": is_personal,
-    }
-
-
-# â”€â”€â”€ Dashboard Period Preference â”€â”€â”€
-
-@router.get("/my-period")
-async def get_my_period(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    return {"period": getattr(current_user, 'dashboard_period_pref', 'month') or 'month'}
-
-
-@router.put("/my-period")
-async def save_my_period(
-    data: dict,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    period = data.get("period", "month")
-    if period not in ("today", "week", "month"):
-        raise HTTPException(status_code=400, detail="Ongeldige periode")
-    user = db.query(User).filter(User.id == current_user.id).first()
-    user.dashboard_period_pref = period
-    db.commit()
-    return {"period": period}
-
-
-# â”€â”€â”€ Leaderboard â”€â”€â”€
-
-@router.get("/leaderboard")
-async def get_leaderboard(
-    period: str = "month",
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Sales leaderboard â€” visible to all sales users for competitive comparison."""
-    from datetime import date
-    from app.models.notification import ActivityLog
-    from app.models.communication import CallLog
-    from app.models.user import ScoringConfig
-
-    now = datetime.now(timezone.utc)
-    start = _get_period_start(period, now)
-
-    cfg = db.query(ScoringConfig).filter(ScoringConfig.id == 1).first()
-    call_pts = cfg.call_points if cfg else 2
-    lead_pts = cfg.lead_points if cfg else 1
-    prospect_pts = cfg.prospect_points if cfg else 10
-    onboarding_pts = cfg.onboarding_points if cfg else 50
-    client_pts = cfg.client_points if cfg else 100
-
-    sales_users = db.query(User).filter(
-        User.role.in_(["sales", "extern"]),
-        User.status == "active",
-        User.show_on_sales_dashboard == True,
-    ).all()
-
-    results = []
-    for u in sales_users:
-        calls = db.query(func.count(CallLog.id)).filter(
-            CallLog.user_id == u.id,
-            CallLog.created_at >= start,
-        ).scalar() or 0
-
-        new_leads = db.query(func.count(Lead.id)).filter(
-            Lead.assigned_user_id == u.id,
-            Lead.created_at >= start,
-            Lead.is_deleted == False,
-        ).scalar() or 0
-
-        # Prospects: gefilterd op prospect_since (wanneer lead echt prospect werd in periode)
-        prospects = db.query(func.count(Lead.id)).filter(
-            or_(Lead.assigned_user_id == u.id, Lead.sales_owner_id == u.id),
-            Lead.pipeline_stage == PipelineStage.PROSPECT.value,
-            Lead.prospect_since >= start,
-            Lead.is_deleted == False,
-        ).scalar() or 0
-
-        # Onboarding: gefilterd op onboarding_started_at
-        onboarding = db.query(func.count(Lead.id)).filter(
-            or_(Lead.assigned_user_id == u.id, Lead.sales_owner_id == u.id),
-            Lead.pipeline_stage.in_([PipelineStage.ONBOARDING_SALES.value, PipelineStage.ONBOARDING_BACKOFFICE.value]),
-            Lead.onboarding_started_at >= start,
-            Lead.is_deleted == False,
-        ).scalar() or 0
-
-        # Clients: gefilterd op client_since_date (alleen nieuwe klanten in periode)
-        clients = db.query(func.count(Lead.id)).filter(
-            or_(Lead.assigned_user_id == u.id, Lead.sales_owner_id == u.id),
-            Lead.pipeline_stage == PipelineStage.CLIENT.value,
-            Lead.client_since_date >= start,
-            Lead.is_deleted == False,
-        ).scalar() or 0
-
-        hot_leads = db.query(Lead).options(
-            joinedload(Lead.prospect_data)
-        ).filter(
-            Lead.is_hot_prospect == True,
-            Lead.pipeline_stage == PipelineStage.PROSPECT.value,
-            or_(Lead.assigned_user_id == u.id, Lead.sales_owner_id == u.id),
-            Lead.is_deleted == False,
-        ).all()
-        pipeline_revenue = sum(
-            ((l.prospect_data.fx_estimated_revenue or 0) + (l.prospect_data.tf_estimated_revenue or 0))
-            if l.prospect_data else 0
-            for l in hot_leads
-        )
-
-        score = (calls * call_pts) + (new_leads * lead_pts) + (prospects * prospect_pts) + (onboarding * onboarding_pts) + (clients * client_pts)
-
-        results.append({
-            "user_id": u.id,
-            "full_name": u.full_name,
-            "avatar_url": u.avatar_url,
-            "calls": calls,
-            "new_leads": new_leads,
-            "prospects": prospects,
-            "onboarding": onboarding,
-            "clients": clients,
-            "pipeline_revenue": pipeline_revenue,
-            "score": score,
-        })
-
-    results.sort(key=lambda x: x["score"], reverse=True)
-    for i, r in enumerate(results):
-        r["rank"] = i + 1
-
-    current_user_rank = next((r["rank"] for r in results if r["user_id"] == current_user.id), None)
-
-    return {
-        "leaderboard": results,
-        "period": period,
-        "current_user_rank": current_user_rank,
     }
