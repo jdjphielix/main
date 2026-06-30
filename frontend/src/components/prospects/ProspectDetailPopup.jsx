@@ -719,7 +719,7 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
       <div className="absolute inset-0 bg-black/30" onClick={onClose}></div>
 
       {/* Modal */}
-      <div className="relative bg-white rounded-3xl shadow-2xl w-[90vw] max-w-4xl max-h-[90vh] overflow-y-auto">
+      <div className="relative bg-white rounded-3xl shadow-popup w-[90vw] max-w-4xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-[#e8eaf2] px-8 py-6 flex items-center justify-between rounded-t-3xl z-10">
           <div>
@@ -2164,7 +2164,7 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
       {confirmInvite && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
           <div className="absolute inset-0 bg-black/50" onClick={() => setConfirmInvite(null)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+          <div className="relative bg-white rounded-2xl shadow-popup w-full max-w-md mx-4 overflow-hidden">
             <div className="px-5 py-4 flex items-start gap-3" style={{ backgroundColor: '#fff7ed', borderBottom: '1px solid #fed7aa' }}>
               <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#fed7aa' }}>
                 <Mail size={18} style={{ color: '#b45309' }} />

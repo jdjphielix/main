@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useTranslation } from 'react-i18next';
 import { Loader } from 'lucide-react';
 
 const LoginPage = () => {
   const navigate = useNavigate();
   const { loginWithGoogle, devLogin, loading, isAuthenticated } = useAuth();
+  const { t } = useTranslation();
   const [devEmail, setDevEmail] = useState('');
   const [error, setError] = useState('');
 
@@ -31,7 +33,7 @@ const LoginPage = () => {
       await loginWithGoogle();
       // Google login redirects, so we don't navigate here
     } catch (err) {
-      setError('Google sign-in failed. Please try again.');
+      setError(t('login.googleError', 'Google sign-in failed. Please try again.'));
       console.error('Google login error:', err);
     }
   };
@@ -39,7 +41,7 @@ const LoginPage = () => {
   const handleDevLogin = async (e) => {
     e.preventDefault();
     if (!devEmail) {
-      setError('Email is required');
+      setError(t('login.emailRequired', 'Email is required'));
       return;
     }
 
@@ -50,7 +52,7 @@ const LoginPage = () => {
     } catch (err) {
       setError(
         err.message ||
-        'Login failed. Please try again.'
+        t('login.loginError', 'Login failed. Please try again.')
       );
       console.error('Dev login error:', err);
     }
@@ -88,10 +90,10 @@ const LoginPage = () => {
             {/* Title Section */}
             <div className="text-center space-y-3 animate-slide-up" style={{ animationDelay: '200ms' }}>
               <h1 className="text-3xl font-heading font-bold text-navy dark:text-white">
-                Taper® {'Backoffice'}
+                Taper® {t('login.backoffice', 'Backoffice')}
               </h1>
               <p className="text-gray-600 dark:text-gray-300 text-sm font-medium">
-                {'Bringing back how banking should have been.'}
+                {t('login.tagline', 'Bringing back how banking should have been.')}
               </p>
             </div>
 
@@ -123,7 +125,7 @@ const LoginPage = () => {
                     <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
                     <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
                   </svg>
-                  {'Continue with Google'}
+                  {t('login.googleSignIn', 'Continue with Google')}
                 </>
               )}
             </button>
@@ -135,7 +137,7 @@ const LoginPage = () => {
               </div>
               <div className="relative flex justify-center text-sm">
                 <span className="px-2 bg-white dark:bg-gray-900 text-gray-500 dark:text-gray-400">
-                  {'Development'}
+                  {t('login.orDevMode', 'Development')}
                 </span>
               </div>
             </div>
@@ -143,7 +145,7 @@ const LoginPage = () => {
             {/* Dev Login - Quick User Select */}
             <div className="space-y-3 animate-slide-up" style={{ animationDelay: '500ms' }}>
               <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 text-center uppercase tracking-wider">
-                {'Select test user'}
+                {t('login.selectUser', 'Select test user')}
               </p>
               <div className="space-y-2">
                 {devUsers.map((devUser) => (
@@ -185,7 +187,7 @@ const LoginPage = () => {
 
             {/* Footer */}
             <p className="text-center text-xs text-gray-500 dark:text-gray-400 animate-slide-up" style={{ animationDelay: '600ms' }}>
-              {'Secure connection • Encrypted data'}
+              {t('login.secureConnection', 'Secure connection • Encrypted data')}
             </p>
           </div>
         </div>

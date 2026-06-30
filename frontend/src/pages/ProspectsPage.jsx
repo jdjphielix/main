@@ -286,7 +286,7 @@ export default function ProspectsPage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold text-[#011745]">Prospects</h1>
+              <h1 className="text-3xl font-bold font-heading tracking-tight text-[#011745]">Prospects</h1>
               {isSalesOnly ? (
                 <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#eef2fa] text-[#3d61a4]">
                   <User size={12} /> Mijn prospects

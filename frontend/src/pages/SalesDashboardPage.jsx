@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Users, TrendingUp, Phone, Clock, Building2, Target, ClipboardCheck,
-  Loader2, RefreshCw, AlertCircle, DollarSign, BarChart3,
-  Trophy, Star, LayoutGrid, List, Flame
+  Loader2, RefreshCw, AlertCircle, DollarSign, ArrowUpRight, BarChart3,
+  Trophy, Star, LayoutGrid, List
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -19,7 +19,7 @@ async function api(path) {
 }
 
 function formatCurrency(val) {
-  if (!val) return '€ 0';
+  if (!val) return '€ 0';
   return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(val);
 }
 
@@ -44,7 +44,7 @@ function detectFlashes(prev, next) {
   for (const u of next) {
     const p = prevMap[u.id];
     if (!p) continue;
-    const fields = ['call_count','leads_count','prospects_count','hot_prospects_count','onboarding_count','clients_count','score','pipeline_revenue','client_revenue'];
+    const fields = ['call_count','leads_count','prospects_count','onboarding_count','clients_count','score'];
     for (const f of fields) {
       if ((u[f] || 0) > (p[f] || 0)) {
         if (!flashes[u.id]) flashes[u.id] = new Set();
@@ -68,7 +68,26 @@ function ScoreBar({ score, maxScore }) {
   );
 }
 
-// ── Redesigned CardsView — Revenue domineert ──────────────────────────────────
+function StatCell({ label, value, field, flashSet, icon: Icon, color }) {
+  const isFlashing = flashSet?.has(field);
+  return (
+    <div className={`relative rounded-xl p-3 border transition-all duration-300 ${
+      isFlashing ? 'border-green-300 bg-green-50 shadow-md' : 'bg-[#f7f8fc] border-[#e8eaf2]'
+    }`}
+      style={isFlashing ? { transform: 'scale(1.04)' } : {}}>
+      {isFlashing && <div className="absolute inset-0 rounded-xl border-2 border-green-400 animate-pulse pointer-events-none" />}
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-[10px] uppercase font-semibold text-[#7b859e]">{label}</p>
+        {Icon && <Icon size={12} style={{ color: isFlashing ? '#16a34a' : color }} />}
+      </div>
+      <p className={`text-lg font-bold ${isFlashing ? 'text-green-700' : ''}`} style={isFlashing ? {} : { color: '#011745' }}>
+        {isFlashing && <span className="text-green-500 mr-0.5">↑</span>}{value}
+      </p>
+    </div>
+  );
+}
+
+// ── Cards view ────────────────────────────────────────────────────────────────
 function CardsView({ users, flashes, weights }) {
   const maxScore = Math.max(...users.map(u => u.score), 1);
   return (
@@ -76,124 +95,81 @@ function CardsView({ users, flashes, weights }) {
       {users.map(u => {
         const rankCfg = RANK_CONFIG[u.rank - 1];
         const flashSet = flashes[u.id];
-        const totalRevenue = (u.pipeline_revenue || 0) + (u.onboarding_revenue || 0) + (u.client_revenue || 0);
-
         return (
           <div key={u.id} className={`rounded-2xl border overflow-hidden shadow-sm bg-gradient-to-r ${rankCfg?.bg || 'from-white to-white'} ${rankCfg?.border || 'border-[#e8eaf2]'}`}>
-
-            {/* ── Header: naam + score ── */}
-            <div className="flex items-center justify-between px-5 py-3 border-b border-[#f3f4f8]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#f3f4f8]">
               <div className="flex items-center gap-3">
                 <div className="relative">
-                  <div className="w-9 h-9 rounded-full bg-[#011745] flex items-center justify-center text-white font-bold text-sm">
+                  <div className="w-10 h-10 rounded-full bg-[#011745] flex items-center justify-center text-white font-bold text-sm">
                     {u.full_name?.charAt(0).toUpperCase()}
                   </div>
                   {u.rank <= 3 && <span className="absolute -top-1 -right-1 text-base leading-none">{rankCfg.medal}</span>}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <p className="font-semibold text-[#011745] text-sm">{u.full_name}</p>
+                    <p className="font-semibold text-[#011745]">{u.full_name}</p>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${rankCfg?.badge || 'bg-[#e8eaf2] text-[#566079]'}`}>#{u.rank}</span>
                   </div>
-                  <p className="text-[11px] text-[#7b859e]">{u.email}</p>
+                  <p className="text-xs text-[#7b859e]">{u.email}</p>
                 </div>
               </div>
-              <div className="text-right min-w-28">
-                <p className="text-[10px] text-[#7b859e] uppercase font-semibold">Score</p>
-                <p className={`text-xl font-black transition-colors ${flashSet?.has('score') ? 'text-green-600' : 'text-[#3d61a4]'}`}>
+              <div className="text-right min-w-32">
+                <p className="text-xs text-[#7b859e]">Score</p>
+                <p className={`text-2xl font-black transition-colors ${flashSet?.has('score') ? 'text-green-600' : 'text-[#3d61a4]'}`}>
                   {flashSet?.has('score') && <span className="text-green-500">↑</span>}
-                  {u.score.toLocaleString('nl-NL')} <span className="text-xs font-normal">pts</span>
+                  {u.score.toLocaleString('nl-NL')} <span className="text-sm font-normal">pts</span>
                 </p>
                 <ScoreBar score={u.score} maxScore={maxScore} />
               </div>
             </div>
-
-            {/* ── REVENUE — grootste sectie ── */}
-            <div className="px-5 py-4 border-b border-[#f3f4f8]" style={{ background: 'linear-gradient(135deg, #011745 0%, #0a2d6b 100%)' }}>
-              <p className="text-[10px] uppercase font-bold text-[rgba(255,255,255,0.5)] tracking-wider mb-3">Revenue</p>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <p className="text-[10px] text-[rgba(255,255,255,0.55)] uppercase font-semibold mb-1">Pipeline</p>
-                  <p className={`text-2xl font-black ${flashSet?.has('pipeline_revenue') ? 'text-green-300' : 'text-white'}`}
-                    style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", letterSpacing: '-0.5px' }}>
-                    {flashSet?.has('pipeline_revenue') && <span className="text-green-400">↑</span>}
-                    {formatCurrency(u.pipeline_revenue || 0)}
-                  </p>
-                  <p className="text-[10px] text-[rgba(255,255,255,0.4)] mt-0.5">Prospect fase</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-[rgba(255,255,255,0.55)] uppercase font-semibold mb-1">Onboarding</p>
-                  <p className="text-2xl font-black text-[#5a7fc2]"
-                    style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", letterSpacing: '-0.5px' }}>
-                    {formatCurrency(u.onboarding_revenue || 0)}
-                  </p>
-                  <p className="text-[10px] text-[rgba(255,255,255,0.4)] mt-0.5">In behandeling</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-[rgba(255,255,255,0.55)] uppercase font-semibold mb-1">Client / jr</p>
-                  <p className={`text-2xl font-black ${flashSet?.has('client_revenue') ? 'text-green-300' : 'text-[#7dd3a8]'}`}
-                    style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", letterSpacing: '-0.5px' }}>
-                    {flashSet?.has('client_revenue') && <span className="text-green-400">↑</span>}
-                    {formatCurrency(u.client_revenue || 0)}
-                  </p>
-                  <p className="text-[10px] text-[rgba(255,255,255,0.4)] mt-0.5">Actieve klanten</p>
+            <div className="p-4 grid grid-cols-4 gap-3">
+              <div className="col-span-4 grid grid-cols-2 sm:grid-cols-4 gap-2 mb-1">
+                <StatCell label="Leads" value={u.leads_count} field="leads_count" flashSet={flashSet} icon={Users} color="#3d61a4" />
+                <StatCell label="Prospects" value={u.prospects_count} field="prospects_count" flashSet={flashSet} icon={Target} color="#92400e" />
+                <StatCell label="Onboarding" value={u.onboarding_count} field="onboarding_count" flashSet={flashSet} icon={ClipboardCheck} color="#166534" />
+                <StatCell label="Clients" value={u.clients_count} field="clients_count" flashSet={flashSet} icon={Building2} color="#011745" />
+              </div>
+              <div className="col-span-2 grid grid-cols-2 gap-2">
+                <StatCell label="Calls" value={u.call_count} field="call_count" flashSet={flashSet} icon={Phone} color="#566079" />
+                <div className="bg-[#f7f8fc] rounded-xl p-3 border border-[#e8eaf2]">
+                  <p className="text-[10px] uppercase font-semibold text-[#7b859e] mb-1">Beltijd</p>
+                  <p className="text-lg font-bold text-[#011745]">{formatDuration(u.total_call_duration_seconds)}</p>
                 </div>
               </div>
-              {/* Revenue bar */}
-              {totalRevenue > 0 && (
-                <div className="flex h-1.5 rounded-full overflow-hidden mt-4 gap-0.5">
-                  {(u.pipeline_revenue||0) > 0    && <div style={{ flex: u.pipeline_revenue, background: '#3d61a4' }} className="rounded-l-full" />}
-                  {(u.onboarding_revenue||0) > 0  && <div style={{ flex: u.onboarding_revenue, background: '#5a7fc2' }} />}
-                  {(u.client_revenue||0) > 0      && <div style={{ flex: u.client_revenue, background: '#7dd3a8' }} className="rounded-r-full" />}
+              <div className="col-span-2 grid grid-cols-3 gap-2">
+                <div className="bg-[#f7f8fc] rounded-xl p-3 border border-[#e8eaf2]">
+                  <p className="text-[10px] uppercase font-semibold text-[#7b859e] mb-1">Prospect</p>
+                  <p className="text-sm font-bold text-[#3d61a4]">{formatCurrency(u.pipeline_revenue)}</p>
                 </div>
-              )}
-            </div>
-
-            {/* ── PROSPECTS — tweede prioriteit ── */}
-            <div className="grid grid-cols-2 gap-0 border-b border-[#f3f4f8]">
-              <div className={`px-5 py-3 border-r border-[#f3f4f8] ${flashSet?.has('hot_prospects_count') ? 'bg-red-50' : 'bg-white'}`}>
-                <div className="flex items-center gap-1.5 mb-1">
-                  <Flame size={13} color="#ef4444" />
-                  <p className="text-[10px] uppercase font-semibold text-[#ef4444]">Hot Prospects</p>
+                <div className="bg-[#f7f8fc] rounded-xl p-3 border border-[#e8eaf2]">
+                  <p className="text-[10px] uppercase font-semibold text-[#7b859e] mb-1">Onboarding</p>
+                  <p className="text-sm font-bold text-amber-600">{formatCurrency(u.onboarding_revenue)}</p>
                 </div>
-                <p className={`text-3xl font-black ${flashSet?.has('hot_prospects_count') ? 'text-red-600' : 'text-[#011745]'}`}
-                  style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-                  {flashSet?.has('hot_prospects_count') && <span className="text-green-500">↑</span>}
-                  {u.hot_prospects_count || 0}
-                </p>
-              </div>
-              <div className={`px-5 py-3 ${flashSet?.has('prospects_count') ? 'bg-blue-50' : 'bg-white'}`}>
-                <div className="flex items-center gap-1.5 mb-1">
-                  <Target size={13} color="#3d61a4" />
-                  <p className="text-[10px] uppercase font-semibold text-[#3d61a4]">Totaal Prospects</p>
+                <div className="bg-[#f7f8fc] rounded-xl p-3 border border-[#e8eaf2]">
+                  <p className="text-[10px] uppercase font-semibold text-[#7b859e] mb-1">Client/jr</p>
+                  <p className="text-sm font-bold text-green-600">{formatCurrency(u.client_revenue)}</p>
                 </div>
-                <p className={`text-3xl font-black ${flashSet?.has('prospects_count') ? 'text-blue-600' : 'text-[#011745]'}`}
-                  style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-                  {flashSet?.has('prospects_count') && <span className="text-green-500">↑</span>}
-                  {u.prospects_count || 0}
-                </p>
               </div>
             </div>
-
-            {/* ── Secundaire stats — klein ── */}
-            <div className="grid grid-cols-4 gap-2 px-5 py-3 bg-[#f7f8fc]">
-              <div className="text-center">
-                <p className="text-[9px] uppercase font-semibold text-[#a4abbe] mb-0.5">Onboarding</p>
-                <p className="text-base font-bold text-[#566079]">{u.onboarding_count || 0}</p>
+            {u.score > 0 && (
+              <div className="px-4 pb-3">
+                <div className="flex gap-0.5 h-1.5 rounded-full overflow-hidden">
+                  {u.call_count > 0       && <div className="bg-[#566079]" style={{ flex: u.call_count * (weights?.call_points||2) }} />}
+                  {u.leads_count > 0      && <div className="bg-[#3d61a4]" style={{ flex: u.leads_count * (weights?.lead_points||1) }} />}
+                  {u.prospects_count > 0  && <div className="bg-amber-400" style={{ flex: u.prospects_count * (weights?.prospect_points||10) }} />}
+                  {u.onboarding_count > 0 && <div className="bg-orange-400" style={{ flex: u.onboarding_count * (weights?.onboarding_points||50) }} />}
+                  {u.clients_count > 0    && <div className="bg-green-500" style={{ flex: u.clients_count * (weights?.client_points||100) }} />}
+                </div>
+                <div className="flex gap-3 mt-1 text-[9px] text-[#7b859e]">
+                  {[['#566079','Calls'],['#3d61a4','Leads'],['bg-amber-400','Prospects'],['bg-orange-400','Onboarding'],['bg-green-500','Clients']].map(([c,l]) => (
+                    <span key={l} className="flex items-center gap-0.5">
+                      <span className="w-2 h-1 rounded-sm inline-block" style={c.startsWith('#') ? {backgroundColor:c} : {}} />
+                      {l}
+                    </span>
+                  ))}
+                </div>
               </div>
-              <div className="text-center">
-                <p className="text-[9px] uppercase font-semibold text-[#a4abbe] mb-0.5">Clients</p>
-                <p className="text-base font-bold text-[#566079]">{u.clients_count || 0}</p>
-              </div>
-              <div className="text-center">
-                <p className="text-[9px] uppercase font-semibold text-[#a4abbe] mb-0.5">Leads</p>
-                <p className="text-base font-bold text-[#566079]">{u.leads_count || 0}</p>
-              </div>
-              <div className="text-center">
-                <p className="text-[9px] uppercase font-semibold text-[#a4abbe] mb-0.5">Calls / {formatDuration(u.total_call_duration_seconds)}</p>
-                <p className="text-base font-bold text-[#566079]">{u.call_count || 0}</p>
-              </div>
-            </div>
+            )}
           </div>
         );
       })}
@@ -203,19 +179,18 @@ function CardsView({ users, flashes, weights }) {
 
 // ── Bar chart view ────────────────────────────────────────────────────────────
 function ChartView({ users }) {
-  const [metric, setMetric] = useState('pipeline_revenue');
+  const [metric, setMetric] = useState('score');
   const metrics = [
-    { key: 'pipeline_revenue',  label: 'Pipeline Revenue',  color: '#3d61a4' },
-    { key: 'client_revenue',    label: 'Client Rev./jr',    color: '#16a34a' },
-    { key: 'onboarding_revenue',label: 'Onboarding Rev.',   color: '#f59e0b' },
-    { key: 'hot_prospects_count',label:'Hot Prospects',     color: '#ef4444' },
-    { key: 'prospects_count',   label: 'Prospects',         color: '#5a7fc2' },
-    { key: 'score',             label: 'Score',             color: '#011745' },
-    { key: 'call_count',        label: 'Calls',             color: '#566079' },
-    { key: 'clients_count',     label: 'Clients',           color: '#0a2d6b' },
+    { key: 'score',            label: 'Score',           color: '#3d61a4' },
+    { key: 'call_count',       label: 'Calls',           color: '#566079' },
+    { key: 'leads_count',      label: 'Leads',           color: '#3d61a4' },
+    { key: 'prospects_count',  label: 'Prospects',       color: '#92400e' },
+    { key: 'onboarding_count', label: 'Onboarding',      color: '#166534' },
+    { key: 'clients_count',    label: 'Clients',         color: '#011745' },
+    { key: 'pipeline_revenue', label: 'Pipeline Revenue',color: '#5a7fc2' },
+    { key: 'client_revenue',   label: 'Client Rev./jr',  color: '#16a34a' },
   ];
   const selected = metrics.find(m => m.key === metric);
-  const isRevenue = metric.includes('revenue');
   const chartData = users.map(u => ({
     name: u.full_name.split(' ')[0],
     fullName: u.full_name,
@@ -228,7 +203,7 @@ function ChartView({ users }) {
     return (
       <div className="bg-white rounded-xl border border-[#e8eaf2] shadow-lg p-3 text-xs">
         <p className="font-bold text-[#011745] mb-1">{payload[0].payload.fullName}</p>
-        <p className="text-[#3d61a4]">{selected.label}: <b>{isRevenue ? formatCurrency(payload[0].value) : payload[0].value.toLocaleString('nl-NL')}</b></p>
+        <p className="text-[#3d61a4]">{selected.label}: <b>{metric.includes('revenue') ? formatCurrency(payload[0].value) : payload[0].value.toLocaleString('nl-NL')}</b></p>
         <p className="text-[#7b859e]">Rank #{payload[0].payload.rank}</p>
       </div>
     );
@@ -250,11 +225,11 @@ function ChartView({ users }) {
           <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f8" vertical={false} />
           <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#566079' }} axisLine={false} tickLine={false} />
           <YAxis tick={{ fontSize: 11, fill: '#a4abbe' }} axisLine={false} tickLine={false}
-            tickFormatter={v => isRevenue ? `€${(v/1000).toFixed(0)}k` : v} />
+            tickFormatter={v => metric.includes('revenue') ? `€${(v/1000).toFixed(0)}k` : v} />
           <Tooltip content={<CustomTooltip />} />
           <Bar dataKey="value" radius={[8,8,0,0]} fill={selected.color}
             label={{ position: 'top', fontSize: 11, fill: '#566079',
-              formatter: v => isRevenue ? formatCurrency(v) : v.toLocaleString('nl-NL') }} />
+              formatter: v => metric.includes('revenue') ? formatCurrency(v) : v.toLocaleString('nl-NL') }} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -264,12 +239,11 @@ function ChartView({ users }) {
 // ── Radar view ────────────────────────────────────────────────────────────────
 function RadarView({ users }) {
   const fields = [
-    { subject: 'Pipeline Rev.',  key: 'pipeline_revenue' },
-    { subject: 'Client Rev.',    key: 'client_revenue' },
-    { subject: 'Hot Prospects',  key: 'hot_prospects_count' },
-    { subject: 'Prospects',      key: 'prospects_count' },
-    { subject: 'Clients',        key: 'clients_count' },
-    { subject: 'Calls',          key: 'call_count' },
+    { subject: 'Calls',      key: 'call_count' },
+    { subject: 'Leads',      key: 'leads_count' },
+    { subject: 'Prospects',  key: 'prospects_count' },
+    { subject: 'Onboarding', key: 'onboarding_count' },
+    { subject: 'Clients',    key: 'clients_count' },
   ];
   const radarData = fields.map(row => {
     const point = { subject: row.subject };
@@ -277,7 +251,7 @@ function RadarView({ users }) {
     users.forEach(u => { point[u.full_name] = Math.round(((u[row.key] || 0) / max) * 100); });
     return point;
   });
-  const COLORS = ['#3d61a4','#ef4444','#166534','#566079','#5a7fc2'];
+  const COLORS = ['#3d61a4','#92400e','#166534','#566079','#5a7fc2'];
   return (
     <div className="bg-white rounded-2xl border border-[#e8eaf2] shadow-sm p-6">
       <p className="text-xs font-semibold text-[#7b859e] uppercase tracking-wider mb-4">Vergelijking (relatief per categorie)</p>
@@ -306,7 +280,7 @@ function LeaderboardView({ users }) {
       <table className="w-full">
         <thead>
           <tr className="border-b border-[#f3f4f8]">
-            {['#','Naam','Pipeline Rev.','Client Rev./jr','🔥 Hot','Prospects','Score','Calls'].map(h => (
+            {['#','Naam','Score','Calls','Leads','Prospects','Onboarding','Clients','Pipeline'].map(h => (
               <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-[#7b859e] uppercase">{h}</th>
             ))}
           </tr>
@@ -325,10 +299,6 @@ function LeaderboardView({ users }) {
                     <p className="text-sm font-semibold text-[#011745]">{u.full_name}</p>
                   </div>
                 </td>
-                <td className="px-4 py-3 text-sm font-bold text-[#3d61a4]">{formatCurrency(u.pipeline_revenue)}</td>
-                <td className="px-4 py-3 text-sm font-bold text-green-600">{formatCurrency(u.client_revenue)}</td>
-                <td className="px-4 py-3 text-sm font-bold text-red-500">{u.hot_prospects_count || 0}</td>
-                <td className="px-4 py-3 text-sm text-[#566079]">{u.prospects_count}</td>
                 <td className="px-4 py-3">
                   <p className="text-sm font-black text-[#3d61a4]">{u.score.toLocaleString('nl-NL')}</p>
                   <div className="w-20 h-1 bg-[#e8eaf2] rounded-full mt-1 overflow-hidden">
@@ -336,6 +306,11 @@ function LeaderboardView({ users }) {
                   </div>
                 </td>
                 <td className="px-4 py-3 text-sm text-[#566079]">{u.call_count}</td>
+                <td className="px-4 py-3 text-sm text-[#566079]">{u.leads_count}</td>
+                <td className="px-4 py-3 text-sm text-[#566079]">{u.prospects_count}</td>
+                <td className="px-4 py-3 text-sm text-[#566079]">{u.onboarding_count}</td>
+                <td className="px-4 py-3 text-sm text-[#566079]">{u.clients_count}</td>
+                <td className="px-4 py-3 text-sm font-semibold text-[#3d61a4]">{formatCurrency(u.pipeline_revenue + u.onboarding_revenue)}</td>
               </tr>
             );
           })}
@@ -398,7 +373,7 @@ export default function SalesDashboardPage() {
     <div className="min-h-screen bg-[#f7f8fc] p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-[#011745]">Sales Dashboard</h1>
+          <h1 className="text-2xl font-bold font-heading tracking-tight text-[#011745]">Sales Dashboard</h1>
           <p className="text-sm text-[#7b859e] mt-0.5">
             {data ? `${data.total} sales gebruiker${data.total !== 1 ? 's' : ''} • live refresh elke 30s` : 'Pipeline overzicht'}
           </p>
@@ -439,77 +414,43 @@ export default function SalesDashboardPage() {
         </div>
       ) : (
         <>
-          {/* ── Top summary: Revenue domineert ── */}
-          <div className="mb-5">
-            {/* Twee grote revenue kaarten bovenaan */}
-            <div className="grid grid-cols-2 gap-4 mb-3">
-              {[
-                {
-                  label: 'Totale Pipeline Revenue',
-                  value: formatCurrency(data.users.reduce((s,u)=>s+(u.pipeline_revenue||0)+(u.onboarding_revenue||0),0)),
-                  sub: 'Prospects + onboarding fase',
-                  icon: TrendingUp,
-                  accent: '#3d61a4',
-                },
-                {
-                  label: 'Client Revenue / jaar',
-                  value: formatCurrency(data.users.reduce((s,u)=>s+(u.client_revenue||0),0)),
-                  sub: 'Actieve klanten',
-                  icon: DollarSign,
-                  accent: '#16a34a',
-                },
-              ].map(item => (
-                <div key={item.label} className="rounded-2xl overflow-hidden shadow-sm border border-[#e8eaf2]"
-                  style={{ background: 'linear-gradient(135deg, #011745 0%, #0a2d6b 100%)' }}>
-                  <div className="px-6 py-5">
-                    <div className="flex items-center gap-2 mb-3">
-                      <item.icon size={16} style={{ color: item.accent }} />
-                      <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.55)' }}>{item.label}</p>
-                    </div>
-                    <p className="font-black text-white mb-1"
-                      style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: 36, letterSpacing: '-1px', lineHeight: 1 }}>
-                      {item.value}
-                    </p>
-                    <p className="text-xs mt-2" style={{ color: 'rgba(255,255,255,0.4)' }}>{item.sub}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Drie secundaire kaarten: Hot Prospects, Totaal Prospects, Calls */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-white rounded-xl p-4 border border-[#fecaca] shadow-sm">
+          {/* Totals */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+            {[
+              { label: 'Totaal Score', value: data.users.reduce((s,u)=>s+u.score,0).toLocaleString('nl-NL')+' pts', icon: Trophy, color: '#3d61a4' },
+              { label: 'Pipeline Revenue', value: formatCurrency(data.users.reduce((s,u)=>s+u.pipeline_revenue+u.onboarding_revenue,0)), icon: TrendingUp, color: '#92400e' },
+              { label: 'Client Rev./jr', value: formatCurrency(data.users.reduce((s,u)=>s+u.client_revenue,0)), icon: DollarSign, color: '#166534' },
+              { label: 'Totaal Calls', value: data.users.reduce((s,u)=>s+u.call_count,0).toString(), icon: Phone, color: '#566079' },
+            ].map(item => (
+              <div key={item.label} className="bg-white rounded-xl p-4 border border-[#e8eaf2] shadow-sm">
                 <div className="flex items-center gap-2 mb-2">
-                  <Flame size={15} color="#ef4444" />
-                  <p className="text-xs font-semibold text-[#ef4444] uppercase">Hot Prospects</p>
+                  <item.icon size={15} style={{ color: item.color }} />
+                  <p className="text-xs font-semibold text-[#7b859e] uppercase">{item.label}</p>
                 </div>
-                <p className="text-3xl font-black text-[#011745]"
-                  style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-                  {data.users.reduce((s,u)=>s+(u.hot_prospects_count||0),0)}
-                </p>
+                <p className="text-xl font-bold text-[#011745]">{item.value}</p>
               </div>
-              <div className="bg-white rounded-xl p-4 border border-[#e8eaf2] shadow-sm">
-                <div className="flex items-center gap-2 mb-2">
-                  <Target size={15} color="#3d61a4" />
-                  <p className="text-xs font-semibold text-[#3d61a4] uppercase">Totaal Prospects</p>
-                </div>
-                <p className="text-3xl font-black text-[#011745]"
-                  style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-                  {data.users.reduce((s,u)=>s+(u.prospects_count||0),0)}
-                </p>
-              </div>
-              <div className="bg-white rounded-xl p-4 border border-[#e8eaf2] shadow-sm">
-                <div className="flex items-center gap-2 mb-2">
-                  <Phone size={15} color="#7b859e" />
-                  <p className="text-xs font-semibold text-[#7b859e] uppercase">Totaal Calls</p>
-                </div>
-                <p className="text-3xl font-black text-[#011745]"
-                  style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-                  {data.users.reduce((s,u)=>s+(u.call_count||0),0)}
-                </p>
-              </div>
-            </div>
+            ))}
           </div>
+
+          {/* Weights legend */}
+          {data.weights && (
+            <div className="flex items-center gap-2 mb-5 flex-wrap">
+              <span className="text-[10px] font-semibold text-[#a4abbe] uppercase tracking-wider mr-1">Puntenwaardes:</span>
+              {[
+                { label:'Call',       val: data.weights.call_points,       color:'#566079' },
+                { label:'Lead',       val: data.weights.lead_points,       color:'#3d61a4' },
+                { label:'Prospect',   val: data.weights.prospect_points,   color:'#92400e' },
+                { label:'Onboarding', val: data.weights.onboarding_points, color:'#166534' },
+                { label:'Client',     val: data.weights.client_points,     color:'#011745' },
+              ].map(w => (
+                <span key={w.label} className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
+                  style={{ backgroundColor: w.color }}>
+                  {w.label} = {w.val}pt
+                </span>
+              ))}
+              <a href="/team-management" className="text-[10px] text-[#3d61a4] hover:underline ml-2">⚙ Aanpassen</a>
+            </div>
+          )}
 
           {viewMode === 'cards' && <CardsView users={data.users} flashes={flashes} weights={data.weights} />}
           {viewMode === 'bar'   && <ChartView users={data.users} />}

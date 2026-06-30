@@ -36,7 +36,7 @@ export default function ContactFamilyPopup({ leadId, contactName, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
+      <div className="bg-white rounded-2xl shadow-popup w-full max-w-md mx-4">
         <div className="px-6 py-4 border-b border-[#e8eaf2] flex items-center justify-between" style={{ backgroundColor: '#011745' }}>
           <div className="flex items-center gap-3">
             <Users size={18} style={{ color: '#eef2fa' }} />

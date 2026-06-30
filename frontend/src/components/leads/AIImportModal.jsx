@@ -137,7 +137,7 @@ export default function AIImportModal({ onClose, onImport }) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-3xl shadow-popup w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-[#e8eaf2] px-8 py-6 flex items-center justify-between">
           <h1 className="text-2xl font-bold text-[#011745]">Import Leads with AI</h1>

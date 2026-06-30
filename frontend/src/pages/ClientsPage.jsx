@@ -811,7 +811,7 @@ export default function ClientsPage({ myClientsOnly = false }) {
       <div className="bg-white border-b border-[#e8eaf2] px-8 py-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-bold" style={{ color: '#011745' }}>{myClientsOnly ? 'Mijn Clients' : 'Clients'}</h1>
+            <h1 className="text-2xl font-bold font-heading tracking-tight" style={{ color: '#011745' }}>{myClientsOnly ? 'Mijn Clients' : 'Clients'}</h1>
             <p className="text-sm mt-1" style={{ color: '#7b859e' }}>
               {loading ? 'Laden...' : `${clients.length} actieve klanten`}
             </p>
@@ -1533,7 +1533,7 @@ export default function ClientsPage({ myClientsOnly = false }) {
                                   </div>
                                 </div>
                                 {/* Volume + split */}
-                                <div className="grid grid-cols-4 gap-2 text-[10px]">
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
                                   <div><p className="uppercase text-[#7b859e] font-semibold">Volume/jaar</p><p className="font-bold text-[#011745] text-xs">{formatCurrency(item.volume_per_year)}</p></div>
                                   <div><p className="uppercase text-[#7b859e] font-semibold">Spot ({fmtPct(item.spot_margin_pct)})</p><p className="font-bold text-[#011745] text-xs">{formatCurrency(item.spot_revenue)}</p></div>
                                   <div><p className="uppercase text-[#7b859e] font-semibold">Hedge {item.hedging_pct>0?`(${(item.hedging_pct*100).toFixed(0)}%)`:''}</p><p className="font-bold text-[#011745] text-xs">{formatCurrency(item.hedge_revenue)}</p></div>
@@ -1884,7 +1884,7 @@ export default function ClientsPage({ myClientsOnly = false }) {
 
                       {/* Counts */}
                       {correspondence?.counts && (
-                        <div className="grid grid-cols-4 gap-2">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                           {[
                             { key: 'emails', icon: MailOpen, label: 'E-mails', count: correspondence.counts.emails },
                             { key: 'calls', icon: PhoneCall, label: 'Gesprekken', count: correspondence.counts.calls },
@@ -2802,7 +2802,7 @@ export default function ClientsPage({ myClientsOnly = false }) {
       {/* ═══ BEDRIJFSINFO EDIT MODAL ═══ */}
       {editingClientInfo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-lg mx-4 max-h-[80vh] overflow-auto">
+          <div className="bg-white rounded-2xl shadow-popup p-8 w-full max-w-lg mx-4 max-h-[80vh] overflow-auto">
             <h2 className="text-lg font-bold text-[#011745] mb-6">Bedrijfsinfo bewerken</h2>
             <div className="space-y-4">
               {[

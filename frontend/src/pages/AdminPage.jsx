@@ -471,7 +471,7 @@ function UsersTab() {
 
       {reassignModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+          <div className="bg-white rounded-2xl shadow-popup w-full max-w-md mx-4 p-6">
             <h3 className="text-lg font-bold mb-4" style={{ color: '#011745' }}>Leads Overdragen</h3>
             <p className="text-sm mb-4" style={{ color: '#7b859e' }}>
               Alle leads van {users.find(u => u.id === reassignModal)?.full_name} overdragen naar:
@@ -613,7 +613,7 @@ function RequirementsTab() {
                 className="w-full px-3 py-2.5 rounded-lg border border-[#e8eaf2] text-sm focus:outline-none focus:border-[#3d61a4]"
                 style={{ color: '#011745' }} />
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="text-xs font-medium block mb-1" style={{ color: '#566079' }}>Product</label>
                 <select value={formData.product_type} onChange={e => setFormData({ ...formData, product_type: e.target.value })}
@@ -756,7 +756,7 @@ function PnLTab() {
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-[#e8eaf2] p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-2">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#eef2fa' }}>
@@ -1121,7 +1121,7 @@ function ComplianceInboxTab() {
       {createFromEmail && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
           <div className="absolute inset-0 bg-black/30" onClick={() => setCreateFromEmail(null)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="relative bg-white rounded-2xl shadow-popup w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#e8eaf2] sticky top-0 bg-white z-10">
               <h3 className="text-base font-bold" style={{ color: '#011745' }}>Ticket aanmaken</h3>
               <button onClick={() => setCreateFromEmail(null)} className="p-2 rounded-lg hover:bg-[#f3f4f8] transition-colors">
@@ -1429,7 +1429,7 @@ function ComplianceTab() {
 
       {/* Status summary */}
       {data?.counts && (
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {[
             { key: 'open', icon: AlertTriangle, count: data.counts.open },
             { key: 'in_progress', icon: Clock, count: data.counts.in_progress },
@@ -1581,7 +1581,7 @@ function ComplianceTab() {
           {/* Backdrop */}
           <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setSelectedCase(null)} />
           {/* Panel */}
-          <div className="fixed right-0 top-0 h-full w-[520px] bg-white shadow-2xl z-50 flex flex-col overflow-hidden"
+          <div className="fixed right-0 top-0 h-full w-[520px] bg-white shadow-popup z-50 flex flex-col overflow-hidden"
             style={{ borderLeft: '1px solid #e8eaf2' }}>
 
             {/* Header */}
@@ -1836,7 +1836,7 @@ function ComplianceTab() {
       {showCreate && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
           <div className="absolute inset-0 bg-black/30" onClick={() => setShowCreate(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="relative bg-white rounded-2xl shadow-popup w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#e8eaf2] sticky top-0 bg-white z-10">
               <h3 className="text-base font-bold" style={{ color: '#011745' }}>Nieuwe Compliance Ticket</h3>
               <button onClick={() => setShowCreate(false)} className="p-2 rounded-lg hover:bg-[#f3f4f8] transition-colors">
@@ -1988,7 +1988,7 @@ export default function AdminPage() {
     <div className="h-screen flex flex-col bg-[#f7f8fc]">
       {/* Header */}
       <div className="bg-white border-b border-[#e8eaf2] px-8 py-5">
-        <h1 className="text-2xl font-bold mb-3" style={{ color: '#011745' }}>Admin</h1>
+        <h1 className="text-2xl font-bold font-heading tracking-tight mb-3" style={{ color: '#011745' }}>Admin</h1>
         <div className="flex gap-1 bg-[#f3f4f8] rounded-lg p-1 w-fit">
           {tabs.map(tab => {
             const Icon = tab.icon;

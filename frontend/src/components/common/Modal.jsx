@@ -42,7 +42,7 @@ export default function Modal({
 
       {/* Modal */}
       <div
-        className={`relative bg-white rounded-3xl shadow-2xl ${sizeClasses[size]} max-h-[90vh] overflow-y-auto animate-in fade-in slide-in-from-bottom-4 duration-200`}
+        className={`relative bg-white rounded-3xl shadow-popup ${sizeClasses[size]} max-h-[90vh] overflow-y-auto animate-in fade-in slide-in-from-bottom-4 duration-200`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

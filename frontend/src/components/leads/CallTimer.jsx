@@ -33,7 +33,7 @@ export default function CallTimer({ onLogCall, onCancel }) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
-      <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm">
+      <div className="bg-white rounded-3xl shadow-popup p-8 w-full max-w-sm">
         {/* Timer Display */}
         <div className="text-center mb-8">
           <p className="text-[#a4abbe] text-sm mb-4">Call Duration</p>

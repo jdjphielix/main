@@ -82,7 +82,7 @@ function ScanResultsModal({ doc, onClose, onScanComplete }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-[600px] max-h-[80vh] overflow-y-auto">
+      <div className="relative bg-white rounded-2xl shadow-popup w-[600px] max-h-[80vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b border-[#e8eaf2] px-6 py-4 flex items-center justify-between rounded-t-2xl z-10">
           <div className="flex items-center gap-3">
             <Zap size={18} style={{ color: '#3d61a4' }} />
@@ -318,7 +318,7 @@ function DocumentViewerModal({ doc, onClose, onScanComplete }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-[90vw] max-w-5xl h-[85vh] flex flex-col overflow-hidden">
+      <div className="relative bg-white rounded-2xl shadow-popup w-[90vw] max-w-5xl h-[85vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#e8eaf2]">
           <div className="flex items-center gap-3">
@@ -1064,7 +1064,7 @@ function KYCInfoTab({ lead, prospectData, onUpdate }) {
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {[
                 { label: 'Rente',            value: fmtPct(pd.tf_interest_rate_pct) },
                 { label: 'Arrangement Fee', value: fmtPct(pd.tf_fee_pct) },
@@ -1309,7 +1309,7 @@ export default function OnboardingPage() {
 
   // Role-based access: sales users can only see sales tab, backoffice/admin see backoffice tab
   const userRole = user?.role || 'sales';
-  const isBackofficeUser = ['admin_pay', 'admin_trade', 'backoffice', 'accountmanager'].includes(userRole) || user?.is_teamleader;
+  const isBackofficeUser = ['admin_pay', 'admin_trade', 'backoffice'].includes(userRole) || user?.is_teamleader;
   const isSalesUser = ['sales', 'admin_pay', 'admin_trade', 'teamleader'].includes(userRole) || user?.is_teamleader;
   const canSeeBothTabs = isBackofficeUser && isSalesUser; // admins/teamleaders see both
   const defaultTab = isBackofficeUser && !isSalesUser ? 'backoffice' : 'sales';
@@ -1371,20 +1371,6 @@ export default function OnboardingPage() {
       // Refresh lead in list
       fetchLeads();
     } catch (err) { console.error('Assignment failed:', err); }
-    finally { setSavingAssignment(false); }
-  }
-
-  async function handleAssignAccountManager(leadId, managerId) {
-    setSavingAssignment(true);
-    try {
-      await api(`/api/v1/leads/${leadId}/assign-account-manager`, {
-        method: 'POST',
-        body: JSON.stringify({ account_manager_id: managerId || null }),
-      });
-      // Update selected lead locally
-      setSelectedLead(prev => prev ? { ...prev, account_manager_id: managerId || null } : prev);
-      fetchLeads();
-    } catch (err) { console.error('AM assignment failed:', err); }
     finally { setSavingAssignment(false); }
   }
 
@@ -1667,7 +1653,7 @@ export default function OnboardingPage() {
   async function moveToBackoffice(leadId) {
     if (!window.confirm('Verplaats naar Onboarding Backoffice?')) return;
     try {
-      await api(`/api/v1/leads/${leadId}/to-onboarding-backoffice`, { method: 'POST' });
+      await api(`/api/v1/leads/${leadId}`, { method: 'PUT', body: JSON.stringify({ pipeline_stage: 'onboarding_backoffice' }) });
       setSelectedLead(null);
       fetchLeads();
     } catch (err) { alert('Fout: ' + err.message); }
@@ -1676,7 +1662,7 @@ export default function OnboardingPage() {
   async function moveToClient(leadId) {
     if (!window.confirm('Verplaats naar Clients? Dit rondt de onboarding af.')) return;
     try {
-      await api(`/api/v1/leads/${leadId}/to-client`, { method: 'POST' });
+      await api(`/api/v1/leads/${leadId}`, { method: 'PUT', body: JSON.stringify({ pipeline_stage: 'client' }) });
       setSelectedLead(null);
       fetchLeads();
     } catch (err) { alert('Fout: ' + err.message); }
@@ -1736,7 +1722,7 @@ export default function OnboardingPage() {
       <div className="bg-white border-b border-[#e8eaf2] px-8 py-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-bold" style={{ color: '#011745' }}>Onboarding</h1>
+            <h1 className="text-2xl font-bold font-heading tracking-tight" style={{ color: '#011745' }}>Onboarding</h1>
             <p className="text-sm mt-1" style={{ color: '#7b859e' }}>
               {salesLeads.length} sales onboarding &bull; {backofficeLeads.length} backoffice onboarding
             </p>
@@ -1809,20 +1795,11 @@ export default function OnboardingPage() {
                   <div key={lead.id}
                     onClick={() => setSelectedLead(lead)}
                     className={`bg-white rounded-xl p-4 border cursor-pointer transition-all hover:shadow-md ${
-                      selectedLead?.id === lead.id ? 'border-[#3d61a4] shadow-md ring-1 ring-[#3d61a4]/20' : 'border-[#e8eaf2]'
+                      selectedLead?.id === lead.id ? 'border-[#3d61a4] shadow-md ring-1 ring-[#3d61a4]/20' : 'border-[#e8eaf2] hover:-translate-y-0.5'
                     }`}>
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <h3 className="font-semibold text-sm truncate" style={{ color: '#011745' }}>{lead.company_name}</h3>
-                          {lead.revision_status && (
-                            <span title={lead.revision_note || 'Teruggestuurd door backoffice'}
-                              className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold animate-pulse"
-                              style={{ backgroundColor: lead.revision_status === 'rejected' ? '#dc2626' : '#f97316' }}>
-                              !
-                            </span>
-                          )}
-                        </div>
+                        <h3 className="font-semibold text-sm truncate" style={{ color: '#011745' }}>{lead.company_name}</h3>
                         <p className="text-xs mt-0.5 truncate" style={{ color: '#7b859e' }}>
                           {lead.contact_name} {lead.contact_position ? `— ${lead.contact_position}` : ''}
                         </p>
@@ -1962,8 +1939,6 @@ export default function OnboardingPage() {
                           ? boStatus === 'approved' ? 'bg-[#f0fdf4] border-[#bbf7d0]'
                             : boStatus === 'rejected' ? 'bg-red-50 border-red-200'
                             : 'bg-white border-[#e8eaf2]'
-                          : boStatus === 'approved' ? 'bg-[#f0fdf4] border-[#bbf7d0]'
-                          : boStatus === 'rejected' ? 'bg-red-50 border-red-200'
                           : checked ? 'bg-[#f0fdf4] border-[#bbf7d0]' : 'bg-white border-[#e8eaf2]';
 
                         return (
@@ -2006,26 +1981,21 @@ export default function OnboardingPage() {
                                   }`}>
                                     {req.product_type === 'taperpay' ? 'Pay' : 'Trade'}
                                   </span>
-                                  {/* BO status badge — visible to all users */}
-                                  {boStatus === 'approved' && (
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-green-100 text-green-700">BO: OK</span>
+                                  {/* BO status badge */}
+                                  {isBO && boStatus === 'approved' && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-green-100 text-green-700">GOED</span>
                                   )}
-                                  {boStatus === 'rejected' && (
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-red-100 text-red-700">BO: AFGEKEURD</span>
+                                  {isBO && boStatus === 'rejected' && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-red-100 text-red-700">AFGEKEURD</span>
                                   )}
                                 </div>
                                 {req.description && (
                                   <p className="text-xs mt-0.5" style={{ color: '#a4abbe' }}>{req.description}</p>
                                 )}
-                                {/* Show BO feedback in sales view */}
+                                {/* Show rejection note in sales view */}
                                 {!isBO && boStatus === 'rejected' && boNote && (
-                                  <p className="text-xs mt-1 px-2 py-1 rounded bg-red-50 text-red-600 flex items-start gap-1">
-                                    <span className="font-semibold flex-shrink-0">Backoffice:</span> {boNote}
-                                  </p>
-                                )}
-                                {!isBO && boStatus === 'rejected' && !boNote && (
                                   <p className="text-xs mt-1 px-2 py-1 rounded bg-red-50 text-red-600">
-                                    Afgekeurd door backoffice
+                                    Backoffice: {boNote}
                                   </p>
                                 )}
                               </div>
@@ -2217,17 +2187,6 @@ export default function OnboardingPage() {
                             {salesUsers.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
                           </select>
                         </div>
-                      </div>
-                      <div className="mt-3">
-                        <label className="text-xs font-medium text-[#566079] block mb-1">Accountmanager</label>
-                        <select
-                          value={selectedLead?.account_manager_id || ''}
-                          onChange={e => handleAssignAccountManager(selectedLead.id, e.target.value ? parseInt(e.target.value) : null)}
-                          disabled={savingAssignment}
-                          className="w-full px-3 py-2 rounded-lg border border-[#e8eaf2] text-sm text-[#011745] focus:outline-none focus:border-[#3d61a4] bg-white disabled:opacity-60">
-                          <option value="">— Geen accountmanager —</option>
-                          {salesUsers.filter(u => u.role === 'accountmanager').map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-                        </select>
                       </div>
                       {savingAssignment && <p className="text-xs text-[#3d61a4] mt-2">Opslaan...</p>}
                     </div>
@@ -2655,7 +2614,7 @@ export default function OnboardingPage() {
       {/* ── Terugsturen Modal ── */}
       {showSendBackModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-5">
+          <div className="bg-white rounded-2xl shadow-popup w-full max-w-md mx-4 p-6 space-y-5">
             <div>
               <h2 className="text-lg font-bold text-[#011745]">Terugsturen naar Sales Onboarding</h2>
               <p className="text-sm text-[#7b859e] mt-1">

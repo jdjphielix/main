@@ -17,13 +17,14 @@ import {
   X,
   Loader2,
   ArrowRight,
+  Menu,
 } from 'lucide-react';
 import NewLeadModal from '../leads/NewLeadModal';
 import CallbacksPopup from '../callbacks/CallbacksPopup';
 import CallbackAgendaPopup from '../callbacks/CallbackAgendaPopup';
 import BellijstPopup from '../leads/BellijstPopup';
 
-const TopBar = ({ sidebarOpen }) => {
+const TopBar = ({ sidebarOpen, onMobileMenuClick }) => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { t } = useTranslation();
@@ -246,17 +247,29 @@ const TopBar = ({ sidebarOpen }) => {
 
   return (
     <>
-    <header className="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 h-20 flex items-center px-8 justify-between shadow-sm">
+    <header className="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 h-20 flex items-center px-4 md:px-8 justify-between shadow-sm gap-2">
+      {/* Hamburger — opent de off-canvas sidebar op mobiel */}
+      <button
+        onClick={onMobileMenuClick}
+        className="md:hidden flex-shrink-0 p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+        aria-label="Open menu"
+      >
+        <Menu size={22} />
+      </button>
+
       {/* Left Section: Quick Actions & Search */}
-      <div className="flex items-center gap-3 flex-1">
+      <div className="flex items-center gap-2 lg:gap-3 flex-1 min-w-0">
         {!searchOpen ? (
           quickActions.map((action) => {
             const Icon = action.icon;
+            // Minder belangrijke quick-actions verbergen onder md; labels verbergen onder lg.
+            const secondary = ['callbacks', 'callback-agenda'].includes(action.action);
             return (
               <button
                 key={action.action}
                 onClick={() => handleQuickAction(action.action)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-sm transition-all duration-200 ${
+                title={action.label}
+                className={`${secondary ? 'hidden md:flex' : 'flex'} items-center gap-2 px-3 lg:px-4 py-2.5 rounded-lg font-medium text-sm transition-all duration-200 flex-shrink-0 ${
                   action.color === 'taper-blue'
                     ? 'bg-blue text-white hover:shadow-md'
                     : 'bg-blue-pale text-navy hover:bg-blue-light hover:text-white'
@@ -267,8 +280,8 @@ const TopBar = ({ sidebarOpen }) => {
                     : {}
                 }
               >
-                <Icon size={18} />
-                <span>{action.label}</span>
+                <Icon size={18} className="flex-shrink-0" />
+                <span className="hidden lg:inline">{action.label}</span>
               </button>
             );
           })

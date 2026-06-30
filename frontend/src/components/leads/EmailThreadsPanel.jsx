@@ -69,7 +69,7 @@ function groupEmailsByThread(emails) {
 function ThreadDetailModal({ thread, onClose }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(1,23,69,0.45)' }}>
-      <div className="bg-white rounded-2xl shadow-2xl flex flex-col w-full max-w-2xl max-h-[85vh]">
+      <div className="bg-white rounded-2xl shadow-popup flex flex-col w-full max-w-2xl max-h-[85vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#e8eaf2]">
           <div className="flex-1 min-w-0">

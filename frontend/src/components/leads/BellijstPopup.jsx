@@ -67,7 +67,7 @@ export default function BellijstPopup({ isOpen, onClose }) {
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col overflow-hidden">
+      <div className="relative bg-white rounded-2xl shadow-popup w-full max-w-lg mx-4 max-h-[80vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="px-6 py-4 border-b border-[#e8eaf2] flex items-center justify-between"
           style={{ backgroundColor: '#f7f8fc' }}>
@@ -126,7 +126,7 @@ export default function BellijstPopup({ isOpen, onClose }) {
             <div className="space-y-2">
               {leads.map((lead, index) => (
                 <div key={lead.id}
-                  className="rounded-xl border border-[#e8eaf2] p-4 transition-all hover:shadow-md hover:border-[#3d61a4]/30 bg-white">
+                  className="rounded-xl border border-[#e8eaf2] p-4 transition-all hover:shadow-md hover:-translate-y-0.5 hover:border-[#3d61a4]/30 bg-white">
                   <div className="flex items-center justify-between gap-3">
                     {/* Left: position + info */}
                     <div className="flex items-center gap-3 flex-1 min-w-0">

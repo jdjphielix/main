@@ -1,987 +1,779 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
-  TrendingUp, Users, PhoneCall, Award, DollarSign, BarChart2,
-  Flame, Clock, ChevronRight, X, RefreshCw, Activity,
-  UserCheck, Star, Calendar, Edit2, Trash2
+  Users, Phone, TrendingUp, Target, Activity, AlertCircle, CheckCircle2,
+  X, RefreshCw, Loader2, Clock, Building2, ArrowRight, Plus, Trash2,
+  ChevronDown, ChevronUp, Settings, UserCircle, BarChart3, Edit3, Save
 } from 'lucide-react';
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+const token = () => sessionStorage.getItem('auth_token');
 
-const TOKEN = () => sessionStorage.getItem('auth_token');
-
-async function apiFetch(path) {
-  const res = await fetch(`/api/v1${path}`, {
-    headers: { Authorization: `Bearer ${TOKEN()}` },
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json', ...options.headers },
+    ...options,
   });
-  if (!res.ok) throw new Error(`${res.status} ${path}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
-async function apiPut(path, body) {
-  const res = await fetch(`/api/v1${path}`, {
-    method: 'PUT',
-    headers: { Authorization: `Bearer ${TOKEN()}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`${res.status} ${path}`);
-  return res.json();
-}
-
-function fmt(n) {
-  if (n == null) return '—';
-  return new Intl.NumberFormat('nl-NL').format(n);
-}
-
-function fmtEur(n) {
-  if (n == null) return '—';
-  return new Intl.NumberFormat('nl-NL', {
-    style: 'currency', currency: 'EUR', maximumFractionDigits: 0
-  }).format(n);
-}
-
-function timeAgo(dateStr) {
-  if (!dateStr) return '';
-  const diff = (Date.now() - new Date(dateStr)) / 1000;
-  if (diff < 60) return `${Math.floor(diff)}s`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}u`;
-  return `${Math.floor(diff / 86400)}d`;
-}
-
-// ─── Animated Counter ─────────────────────────────────────────────────────
-
-function AnimatedNumber({ target, prefix = '', suffix = '', duration = 1200 }) {
-  const [display, setDisplay] = useState(0);
-  const raf = useRef(null);
-  const startTs = useRef(null);
-
-  useEffect(() => {
-    if (target == null || isNaN(target)) return;
-    startTs.current = null;
-    const to = Number(target);
-    const step = (ts) => {
-      if (!startTs.current) startTs.current = ts;
-      const progress = Math.min((ts - startTs.current) / duration, 1);
-      const ease = 1 - Math.pow(1 - progress, 3);
-      setDisplay(Math.round(to * ease));
-      if (progress < 1) raf.current = requestAnimationFrame(step);
-    };
-    raf.current = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf.current);
-  }, [target, duration]);
-
-  return <span>{prefix}{fmt(display)}{suffix}</span>;
-}
-
-// ─── Detail Modal ────────────────────────────────────────────────────────
-
-// ─── Modal label & value helpers ─────────────────────────────────────────
-
-const FIELD_LABELS = {
-  leads_assigned: 'Leads toegewezen',
-  calls: 'Calls gedaan',
-  by_stage: 'Verdeling per fase',
-  conversion_rate: 'Conversieratio',
-  total_pipeline: 'Totale pipeline',
-  hot_prospects_total: 'Hot prospects waarde',
-  avg_deal_size: 'Gemiddelde deal',
-  period: 'Periode',
-  Calls: 'Calls',
-  Prospects: 'Prospects',
-  Klanten: 'Klanten',
-  Score: 'Score',
-  Leads: 'Leads',
-  Ratio: 'Ratio',
-  // hidden — null means skip
-  is_personal: null,
-  user_id: null,
-  id: null,
+/* ─── Detail Modal ─── */
+const DetailModal = ({ isOpen, onClose, title, children, wide }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className={`bg-white rounded-2xl shadow-popup ${wide ? 'max-w-4xl' : 'max-w-2xl'} w-full max-h-[80vh] overflow-hidden flex flex-col`}>
+        <div className="px-6 py-4 flex items-center justify-between border-b border-[#e8eaf2]" style={{ backgroundColor: '#011745' }}>
+          <h2 className="text-xl font-bold text-white">{title}</h2>
+          <button onClick={onClose} className="text-white/70 hover:text-white rounded-lg p-2 transition-colors">
+            <X size={24} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 py-6">{children}</div>
+      </div>
+    </div>
+  );
 };
 
-const STAGE_LABELS = {
-  lead: 'Lead',
-  prospect: 'Prospect',
-  onboarding_sales: 'Onboarding sales',
-  onboarding_backoffice: 'Onboarding backoffice',
-  client: 'Klant',
+/* ─── Target Type Labels ─── */
+const TARGET_TYPE_LABELS = {
+  calls_per_week: 'Calls per week',
+  conversions: 'Conversies',
+  pipeline_value: 'Pipeline waarde',
+  leads_called: 'Leads gebeld',
+  clients_won: 'Clients gewonnen',
+  revenue: 'Omzet',
 };
 
-const CURRENCY_FIELDS = new Set([
-  'total_pipeline', 'hot_prospects_total', 'avg_deal_size',
-  'pipeline_revenue', 'client_revenue', 'total',
-]);
-const PERCENT_FIELDS = new Set(['conversion_rate', 'Ratio']);
+const TARGET_TYPES = [
+  { value: 'calls_per_week', label: 'Calls per week' },
+  { value: 'conversions', label: 'Conversies' },
+  { value: 'pipeline_value', label: 'Pipeline waarde' },
+  { value: 'leads_called', label: 'Leads gebeld' },
+  { value: 'clients_won', label: 'Clients gewonnen' },
+  { value: 'revenue', label: 'Omzet' },
+];
 
-function fmtModalVal(key, value) {
-  if (CURRENCY_FIELDS.has(key)) return fmtEur(value || 0);
-  if (PERCENT_FIELDS.has(key)) return typeof value === 'number' ? `${Math.round(value)}%` : String(value ?? '—');
-  if (typeof value === 'boolean') return value ? 'Ja' : 'Nee';
-  if (typeof value === 'number') return fmt(value);
-  return value ?? '—';
-}
+const PERIOD_LABELS = { daily: 'Dagelijks', weekly: 'Wekelijks', monthly: 'Maandelijks' };
+const PERIODS = [
+  { value: 'daily', label: 'Dagelijks' },
+  { value: 'weekly', label: 'Wekelijks' },
+  { value: 'monthly', label: 'Maandelijks' },
+];
 
-function DetailModal({ title, data, onClose }) {
-  useEffect(() => {
-    const handler = (e) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [onClose]);
-
-  const renderEntry = (key, value) => {
-    // Nested object — render as indented sub-section (e.g. by_stage)
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      const label = FIELD_LABELS[key] !== undefined ? FIELD_LABELS[key] : key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-      return (
-        <div key={key} style={S.modalSectionRow}>
-          <span style={S.modalSectionKey}>{label}</span>
-          <div style={S.modalSubList}>
-            {Object.entries(value).map(([sk, sv]) => {
-              const stageLabel = STAGE_LABELS[sk] || sk.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-              const displayVal = sv !== null && typeof sv === 'object'
-                ? (sv.total !== undefined ? fmtEur(sv.total) : Object.values(sv).map(String).join(', '))
-                : String(fmtModalVal(sk, sv));
-              return (
-                <div key={sk} style={S.modalSubRow}>
-                  <span style={S.modalSubKey}>{stageLabel}</span>
-                  <span style={S.modalSubVal}>{displayVal}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      );
-    }
-    // Hidden field
-    if (FIELD_LABELS[key] === null) return null;
-    // Normal scalar field
-    const label = FIELD_LABELS[key] !== undefined
-      ? FIELD_LABELS[key]
-      : key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-    return (
-      <div key={key} style={S.modalRow}>
-        <span style={S.modalKey}>{label}</span>
-        <span style={S.modalVal}>{String(fmtModalVal(key, value))}</span>
-      </div>
-    );
-  };
-
-  return (
-    <div style={S.modalOverlay} onClick={onClose}>
-      <div style={S.modalBox} onClick={(e) => e.stopPropagation()}>
-        <div style={S.modalHeader}>
-          <span style={S.modalTitle}>{title}</span>
-          <button style={S.modalClose} onClick={onClose}><X size={18} /></button>
-        </div>
-        <div style={S.modalBody}>
-          {data && typeof data === 'object' && !Array.isArray(data)
-            ? Object.entries(data).map(([k, v]) => renderEntry(k, v))
-            : <p style={{ color: '#7b859e' }}>{String(data ?? 'Geen data')}</p>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── KPI Card ────────────────────────────────────────────────────────────
-
-function KpiCard({ icon: Icon, label, value, sub, accent, prefix = '', suffix = '', onClick }) {
-  const [hov, setHov] = useState(false);
-  return (
-    <div
-      style={{
-        ...S.kpiCard,
-        boxShadow: hov ? '0 8px 32px rgba(1,23,69,0.18)' : S.kpiCard.boxShadow,
-        transform: hov ? 'translateY(-4px) scale(1.02)' : 'none',
-        cursor: onClick ? 'pointer' : 'default',
-      }}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      onClick={onClick}
-    >
-      <div style={{ ...S.kpiAccent, background: accent }} />
-      <div style={S.kpiIconWrap}><Icon size={20} color={accent} /></div>
-      <div style={S.kpiValue}>
-        <AnimatedNumber target={typeof value === 'number' ? value : 0} prefix={prefix} suffix={suffix} />
-      </div>
-      <div style={S.kpiLabel}>{label}</div>
-      {sub && <div style={S.kpiSub}>{sub}</div>}
-    </div>
-  );
-}
-
-// ─── Leaderboard ──────────────────────────────────────────────────────────
-
-const MEDAL = ['#FFD700', '#C0C0C0', '#CD7F32'];
-
-function LeaderboardCard({ entry, rank, isCurrentUser, onClick }) {
-  const [hov, setHov] = useState(false);
-  const medal = rank < 3 ? MEDAL[rank] : null;
-  return (
-    <div
-      style={{
-        ...S.lbRow,
-        border: isCurrentUser
-          ? '2px solid #3d61a4'
-          : medal ? `2px solid ${medal}` : '1px solid #e8eaf2',
-        boxShadow: hov ? '0 4px 16px rgba(1,23,69,0.12)' : 'none',
-        transform: hov ? 'translateY(-2px)' : 'none',
-        cursor: 'pointer',
-        transition: 'all 0.25s ease',
-      }}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      onClick={onClick}
-    >
-      <div style={{ ...S.lbRank, color: medal || '#a4abbe' }}>
-        {medal && <Star size={12} fill={medal} color={medal} style={{ marginRight: 2 }} />}
-        #{rank + 1}
-      </div>
-      <div style={{ ...S.lbAvatar, background: isCurrentUser ? '#3d61a4' : '#0a2d6b' }}>
-        {(entry.full_name || entry.name || 'U').substring(0, 2).toUpperCase()}
-      </div>
-      <div style={S.lbInfo}>
-        <div style={S.lbName}>
-          {entry.full_name || entry.name || 'Onbekend'}
-          {isCurrentUser && <span style={S.youBadge}>Jij</span>}
-        </div>
-        <div style={S.lbBadges}>
-          <span style={S.badge}>📞 {entry.calls ?? 0}</span>
-          <span style={S.badge}>🎯 {entry.prospects ?? 0}</span>
-          <span style={S.badge}>✅ {entry.clients ?? 0}</span>
-        </div>
-      </div>
-      <div style={S.lbScore}>{fmt(entry.score ?? 0)}</div>
-    </div>
-  );
-}
-
-// ─── Activity Feed ────────────────────────────────────────────────────────
-
-const ACTION_COLORS = {
-  call: '#3d61a4', email: '#5a7fc2', note: '#7b859e',
-  status_change: '#0a2d6b', won: '#16a34a', lost: '#dc2626', default: '#a4abbe',
-};
-
-const ACTION_LABELS = {
-  created: 'aangemaakt', updated: 'bijgewerkt', deleted: 'verwijderd',
-  call: 'gebeld', note: 'notitie', email: 'e-mail',
-  status_change: 'status gewijzigd', won: 'gewonnen', lost: 'verloren',
-  stage_change: 'fase gewijzigd', hot_set: 'hot prospect',
-};
-const ENTITY_LABELS = { lead: 'Lead', prospect: 'Prospect', client: 'Klant', user: 'Gebruiker' };
-
-function getActivityText(item) {
-  const action = item.action || item.action_type || '';
-  const entity = item.entity_type || '';
-  const lead = item.lead?.company_name;
-  const actionLbl = ACTION_LABELS[action] || action;
-  const entityLbl = ENTITY_LABELS[entity] || entity;
-  if (lead) return `${lead} — ${actionLbl}`;
-  if (entityLbl) return `${entityLbl} ${actionLbl}`;
-  return actionLbl || 'Activiteit';
-}
-
-function ActivityFeed({ items }) {
-  if (!items?.length) return <div style={S.empty}>Geen activiteit</div>;
-  return (
-    <div style={S.feedList}>
-      {items.slice(0, 20).map((item, i) => {
-        const actionKey = item.action || item.action_type || 'default';
-        const color = ACTION_COLORS[actionKey] || ACTION_COLORS.default;
-        return (
-          <div key={i} style={S.feedItem}>
-            <div style={{ ...S.feedDot, background: color }} />
-            <div style={S.feedContent}>
-              <span style={S.feedText}>{getActivityText(item)}</span>
-              <span style={S.feedMeta}>
-                {item.user_name && `${item.user_name} · `}{timeAgo(item.created_at)}
-              </span>
-            </div>
-            <span style={{ ...S.feedBadge, background: color + '22', color }}>
-              {ACTION_LABELS[actionKey] || actionKey}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── Hot Prospects ────────────────────────────────────────────────────────
-
-function HotProspects({ items, navigate }) {
-  if (!items?.length) return <div style={S.empty}>Geen hot prospects</div>;
-  return (
-    <div>
-      {items.map((p, i) => (
-        <div key={i} style={S.hotItem} onClick={() => navigate('/prospects')}>
-          <Flame size={14} color="#ef4444" style={{ flexShrink: 0 }} />
-          <div style={S.hotInfo}>
-            <div style={S.hotName}>{p.company_name || p.name}</div>
-            <div style={S.hotSub}>{p.sales_owner_name} · {timeAgo(p.hot_prospect_set_at)} geleden</div>
-          </div>
-          <div style={S.hotRev}>
-            {fmtEur((p.fx_estimated_revenue || 0) + (p.tf_estimated_revenue || 0))}
-          </div>
-          <ChevronRight size={14} color="#a4abbe" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── Revenue Pipeline ─────────────────────────────────────────────────────
-
-function RevenuePipeline({ data }) {
-  if (!data) return <div style={S.empty}>Laden…</div>;
-  const bs = data.by_stage || {};
-  const stages = [
-    { label: 'Prospects', value: bs.prospect?.total || 0, color: '#5a7fc2' },
-    { label: 'Onboarding', value: (bs.onboarding_sales?.total || 0) + (bs.onboarding_backoffice?.total || 0), color: '#3d61a4' },
-    { label: 'Klanten', value: bs.client?.total || 0, color: '#011745' },
-  ];
-  const total = data.total_pipeline || stages.reduce((s, x) => s + (x.value || 0), 0);
-  return (
-    <div style={S.pipeWrap}>
-      {stages.map((st, i) => (
-        <div key={i} style={S.pipeStage}>
-          <div style={{ ...S.pipeBar, background: st.color }}>
-            <span style={S.pipeLabel}>{st.label}</span>
-            <span style={S.pipeAmt}>{fmtEur(st.value || 0)}</span>
-          </div>
-          {i < stages.length - 1 && (
-            <ChevronRight size={20} color="#cdd1e0" style={{ flexShrink: 0 }} />
-          )}
-        </div>
-      ))}
-      <div style={S.pipeTotal}>
-        <span style={S.pipeTotalLbl}>Totaal</span>
-        <span style={S.pipeTotalVal}>{fmtEur(total)}</span>
-      </div>
-      {(data.hot_prospects_total || 0) > 0 && (
-        <div style={S.hotRevBadge}>🔥 {fmtEur(data.hot_prospects_total)} in hot prospects</div>
-      )}
-    </div>
-  );
-}
-
-// ─── Today Panel ──────────────────────────────────────────────────────────
-
-function TodayPanel({ callbacks, dailyList, navigate, onCallbacksChange }) {
-  const [editCb, setEditCb] = useState(null);  // callback being edited
-  const [editDate, setEditDate] = useState('');
-  const [editNote, setEditNote] = useState('');
+/* ─── Admin Targets Tab ─── */
+const AdminTargetsTab = ({ isAdmin }) => {
+  const [salesUsers, setSalesUsers] = useState([]);
+  const [allTargets, setAllTargets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ user_id: '', target_type: 'calls_per_week', target_value: '', period: 'weekly' });
   const [saving, setSaving] = useState(false);
 
-  const items = useMemo(() => {
-    const cb = (callbacks || []).map((c) => ({ ...c, _type: 'callback' }));
-    const dl = (dailyList || []).map((d) => ({ ...d, _type: 'daily' }));
-    return [...cb, ...dl].slice(0, 12);
-  }, [callbacks, dailyList]);
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [usersRes, targetsRes] = await Promise.allSettled([
+        api('/api/v1/dashboard/sales-users'),
+        api('/api/v1/dashboard/targets/all'),
+      ]);
+      if (usersRes.status === 'fulfilled') setSalesUsers(usersRes.value.users || []);
+      if (targetsRes.status === 'fulfilled') setAllTargets(targetsRes.value.targets || []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  const openEdit = (item) => {
-    setEditCb(item);
-    const dt = item.scheduled_at ? new Date(item.scheduled_at) : new Date();
-    const local = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    setEditDate(local);
-    setEditNote(item.internal_note || '');
-  };
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  const handleSave = async () => {
-    if (!editCb) return;
+  const handleCreate = async () => {
+    if (!form.target_value) return;
     setSaving(true);
     try {
-      await fetch(`/api/v1/callbacks/${editCb.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN()}` },
-        body: JSON.stringify({ scheduled_at: new Date(editDate).toISOString(), internal_note: editNote }),
+      await api('/api/v1/dashboard/targets', {
+        method: 'POST',
+        body: JSON.stringify({
+          user_id: form.user_id ? parseInt(form.user_id) : null,
+          target_type: form.target_type,
+          target_value: parseInt(form.target_value),
+          period: form.period,
+        }),
       });
-      setEditCb(null);
-      if (onCallbacksChange) onCallbacksChange();
-    } catch(e) { console.error(e); }
-    setSaving(false);
-  };
-
-  const handleDelete = async (item) => {
-    if (!window.confirm('Callback verwijderen?')) return;
-    try {
-      await fetch(`/api/v1/callbacks/${item.id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${TOKEN()}` },
-      });
-      if (onCallbacksChange) onCallbacksChange();
-    } catch(e) { console.error(e); }
-  };
-
-  const handleNavigate = (item) => {
-    if (item.lead_id) {
-      navigate('/prospects');
-    } else {
-      navigate('/leads');
+      setShowForm(false);
+      setForm({ user_id: '', target_type: 'calls_per_week', target_value: '', period: 'weekly' });
+      fetchData();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(false);
     }
   };
 
-  if (!items.length) return <div style={S.empty}>Niets gepland voor vandaag</div>;
+  const handleDelete = async (id) => {
+    try {
+      await api(`/api/v1/dashboard/targets/${id}`, { method: 'DELETE' });
+      fetchData();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  if (!isAdmin) return null;
+  if (loading) return <div className="flex justify-center py-8"><Loader2 size={24} className="animate-spin" style={{ color: '#3d61a4' }} /></div>;
+
+  const activeTargets = allTargets.filter(t => t.is_active);
+
   return (
-    <div>
-      {editCb && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          onClick={() => setEditCb(null)}>
-          <div style={{ background: '#fff', borderRadius: 14, padding: 24, width: 360, boxShadow: '0 8px 32px rgba(1,23,69,0.2)' }}
-            onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <span style={{ fontWeight: 700, color: '#011745', fontSize: 15 }}>Callback bewerken</span>
-              <button onClick={() => setEditCb(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={18} color="#7b859e" /></button>
+    <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#e8eaf2]">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-bold flex items-center gap-2" style={{ color: '#011745' }}>
+          <Settings size={20} /> Targets Beheer
+        </h2>
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium transition-colors"
+          style={{ backgroundColor: '#3d61a4' }}
+        >
+          <Plus size={16} /> Nieuwe Target
+        </button>
+      </div>
+
+      {/* Create form */}
+      {showForm && (
+        <div className="mb-6 p-4 rounded-xl border border-[#e8eaf2]" style={{ backgroundColor: '#f7f8fc' }}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div>
+              <label className="block text-xs font-medium mb-1" style={{ color: '#566079' }}>Medewerker</label>
+              <select
+                value={form.user_id}
+                onChange={e => setForm({ ...form, user_id: e.target.value })}
+                className="w-full px-3 py-2 rounded-lg border border-[#cdd1e0] text-sm"
+              >
+                <option value="">Team-breed</option>
+                {salesUsers.map(u => (
+                  <option key={u.id} value={u.id}>{u.full_name}</option>
+                ))}
+              </select>
             </div>
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#7b859e', marginBottom: 4 }}>Bedrijf</div>
-              <div style={{ fontWeight: 600, color: '#011745' }}>{editCb.lead?.company_name || editCb.company_name || '—'}</div>
+            <div>
+              <label className="block text-xs font-medium mb-1" style={{ color: '#566079' }}>Type</label>
+              <select
+                value={form.target_type}
+                onChange={e => setForm({ ...form, target_type: e.target.value })}
+                className="w-full px-3 py-2 rounded-lg border border-[#cdd1e0] text-sm"
+              >
+                {TARGET_TYPES.map(tt => (
+                  <option key={tt.value} value={tt.value}>{tt.label}</option>
+                ))}
+              </select>
             </div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#7b859e', display: 'block', marginBottom: 4 }}>Datum & tijd</label>
-              <input type="datetime-local" value={editDate} onChange={e => setEditDate(e.target.value)}
-                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #cdd1e0', fontSize: 13, outline: 'none' }} />
+            <div>
+              <label className="block text-xs font-medium mb-1" style={{ color: '#566079' }}>Doelwaarde</label>
+              <input
+                type="number"
+                value={form.target_value}
+                onChange={e => setForm({ ...form, target_value: e.target.value })}
+                placeholder="bijv. 50"
+                className="w-full px-3 py-2 rounded-lg border border-[#cdd1e0] text-sm"
+              />
             </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#7b859e', display: 'block', marginBottom: 4 }}>Notitie</label>
-              <input value={editNote} onChange={e => setEditNote(e.target.value)} placeholder="Interne notitie..."
-                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #cdd1e0', fontSize: 13, outline: 'none' }} />
+            <div>
+              <label className="block text-xs font-medium mb-1" style={{ color: '#566079' }}>Periode</label>
+              <select
+                value={form.period}
+                onChange={e => setForm({ ...form, period: e.target.value })}
+                className="w-full px-3 py-2 rounded-lg border border-[#cdd1e0] text-sm"
+              >
+                {PERIODS.map(p => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
+              </select>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={handleSave} disabled={saving}
-                style={{ flex: 1, background: '#3d61a4', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 0', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-                {saving ? 'Opslaan...' : 'Opslaan'}
-              </button>
-              <button onClick={() => handleDelete(editCb)}
-                style={{ background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: 8, padding: '9px 14px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-                Verwijder
-              </button>
-            </div>
-            {editCb.lead_id && (
-              <button onClick={() => { setEditCb(null); navigate('/prospects'); }}
-                style={{ marginTop: 10, width: '100%', background: '#eef2fa', color: '#3d61a4', border: 'none', borderRadius: 8, padding: '8px 0', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
-                → Ga naar prospect
-              </button>
-            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm rounded-lg border border-[#cdd1e0]" style={{ color: '#566079' }}>
+              Annuleren
+            </button>
+            <button
+              onClick={handleCreate}
+              disabled={saving || !form.target_value}
+              className="px-4 py-2 text-sm rounded-lg text-white font-medium disabled:opacity-50"
+              style={{ backgroundColor: '#011745' }}
+            >
+              {saving ? <Loader2 size={14} className="animate-spin" /> : 'Opslaan'}
+            </button>
           </div>
         </div>
       )}
-      {items.map((item, i) => (
-        <div key={i} style={{ ...S.todayItem, position: 'relative' }}>
-          <div onClick={() => item._type === 'callback' ? openEdit(item) : handleNavigate(item)}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, cursor: 'pointer' }}>
-            {item._type === 'callback'
-              ? <PhoneCall size={13} color="#3d61a4" />
-              : <Calendar size={13} color="#5a7fc2" />}
-            <div style={S.todayInfo}>
-              <span style={{ ...S.todayName, textDecoration: 'underline', cursor: 'pointer' }}>
-                {item.lead?.company_name || item.company_name || item.name || 'Prospect'}
-              </span>
-              {item.scheduled_at && (
-                <span style={S.todayTime}>
-                  <Clock size={10} style={{ marginRight: 2 }} />
-                  {new Date(item.scheduled_at).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              )}
+
+      {/* Targets table */}
+      {activeTargets.length === 0 ? (
+        <p className="text-sm py-8 text-center" style={{ color: '#a4abbe' }}>Nog geen targets ingesteld</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[#e8eaf2]">
+                <th className="text-left py-3 px-2 font-semibold" style={{ color: '#566079' }}>Medewerker</th>
+                <th className="text-left py-3 px-2 font-semibold" style={{ color: '#566079' }}>Type</th>
+                <th className="text-left py-3 px-2 font-semibold" style={{ color: '#566079' }}>Doel</th>
+                <th className="text-left py-3 px-2 font-semibold" style={{ color: '#566079' }}>Periode</th>
+                <th className="text-right py-3 px-2 font-semibold" style={{ color: '#566079' }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {activeTargets.map(t => (
+                <tr key={t.id} className="border-b border-[#f3f4f8] hover:bg-[#f7f8fc]">
+                  <td className="py-3 px-2 font-medium" style={{ color: '#011745' }}>
+                    {t.user_name}
+                  </td>
+                  <td className="py-3 px-2" style={{ color: '#566079' }}>
+                    {TARGET_TYPE_LABELS[t.target_type] || t.target_type}
+                  </td>
+                  <td className="py-3 px-2 font-bold" style={{ color: '#3d61a4' }}>
+                    {t.target_value}
+                  </td>
+                  <td className="py-3 px-2" style={{ color: '#7b859e' }}>
+                    {PERIOD_LABELS[t.period] || t.period}
+                  </td>
+                  <td className="py-3 px-2 text-right">
+                    <button onClick={() => handleDelete(t.id)} className="p-1.5 rounded-lg hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors">
+                      <Trash2 size={14} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+/* ─── Team Breakdown Modal ─── */
+const TeamBreakdownContent = () => {
+  const [breakdown, setBreakdown] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(null);
+
+  useEffect(() => {
+    api('/api/v1/dashboard/targets/team-breakdown').then(res => {
+      setBreakdown(res.breakdown || []);
+    }).catch(console.error).finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div className="flex justify-center py-8"><Loader2 size={24} className="animate-spin" style={{ color: '#3d61a4' }} /></div>;
+
+  if (breakdown.length === 0) return <p className="text-center py-8" style={{ color: '#a4abbe' }}>Geen sales medewerkers gevonden</p>;
+
+  return (
+    <div className="space-y-3">
+      {breakdown.map(user => (
+        <div key={user.user_id} className="border border-[#e8eaf2] rounded-xl overflow-hidden">
+          <button
+            onClick={() => setExpanded(expanded === user.user_id ? null : user.user_id)}
+            className="w-full p-4 flex items-center justify-between hover:bg-[#f7f8fc] transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: '#3d61a4' }}>
+                {user.user_name.charAt(0)}
+              </div>
+              <span className="font-semibold" style={{ color: '#011745' }}>{user.user_name}</span>
             </div>
-          </div>
-          {item._type === 'callback' && (
-            <div style={{ display: 'flex', gap: 4 }}>
-              <button onClick={() => openEdit(item)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}>
-                <Edit2 size={12} color="#7b859e" />
-              </button>
-              <button onClick={() => handleDelete(item)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}>
-                <Trash2 size={12} color="#dc2626" />
-              </button>
+            <div className="flex items-center gap-3">
+              <span className="text-xs px-2 py-1 rounded-full" style={{ backgroundColor: '#eef2fa', color: '#3d61a4' }}>
+                {user.targets.length} targets
+              </span>
+              {expanded === user.user_id ? <ChevronUp size={16} style={{ color: '#7b859e' }} /> : <ChevronDown size={16} style={{ color: '#7b859e' }} />}
+            </div>
+          </button>
+          {expanded === user.user_id && (
+            <div className="px-4 pb-4 space-y-3">
+              {user.targets.length === 0 ? (
+                <p className="text-xs" style={{ color: '#a4abbe' }}>Geen targets</p>
+              ) : (
+                user.targets.map(t => (
+                  <div key={t.id}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium" style={{ color: '#566079' }}>
+                        {TARGET_TYPE_LABELS[t.target_type] || t.target_type}
+                      </span>
+                      <span className="text-sm font-bold" style={{ color: t.percentage >= 100 ? '#22c55e' : '#3d61a4' }}>
+                        {t.percentage}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-[#f3f4f8] rounded-full h-2 overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(t.percentage, 100)}%`, backgroundColor: t.percentage >= 100 ? '#22c55e' : '#3d61a4' }}
+                      />
+                    </div>
+                    <p className="text-xs mt-1" style={{ color: '#a4abbe' }}>{t.progress}/{t.target_value} • {PERIOD_LABELS[t.period] || t.period}</p>
+                  </div>
+                ))
+              )}
             </div>
           )}
         </div>
       ))}
     </div>
   );
-}
+};
 
-// ─── Main Component ───────────────────────────────────────────────────────
 
-export default function DashboardPage() {
-  const navigate = useNavigate();
+/* ─── Main Dashboard ─── */
+const DashboardPage = () => {
   const { user } = useAuth();
-  const [period, setPeriod] = useState(user?.dashboard_period_pref || 'month');
-  const [kpis, setKpis] = useState(null);
-  const [activity, setActivity] = useState([]);
-  const [leaderboard, setLeaderboard] = useState([]);
-  const [hotProspects, setHotProspects] = useState([]);
-  const [revenuePipeline, setRevenuePipeline] = useState(null);
-  const [callbacks, setCallbacks] = useState([]);
-  const [dailyList, setDailyList] = useState([]);
+  const navigate = useNavigate();
+  const { t } = useTranslation();
+  const [activeModal, setActiveModal] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState(null);
+  const [activeTab, setActiveTab] = useState('overview'); // overview, targets (admin only)
 
-  const isPrivileged = user?.is_superuser || ['admin_pay', 'admin_trade'].includes(user?.role);
-  const isTeamlead = user?.is_teamleader || isPrivileged;
-  const isSales = user?.role === 'sales' || isTeamlead;
-  const isLimited = ['backoffice', 'finance', 'extern'].includes(user?.role) && !isPrivileged;
+  // Real data state
+  const [kpis, setKpis] = useState(null);
+  const [pipeline, setPipeline] = useState([]);
+  const [activities, setActivities] = useState([]);
+  const [targets, setTargets] = useState([]);
+  const [dailyList, setDailyList] = useState([]);
+  const [callbacks, setCallbacks] = useState([]);
 
-  const loadData = useCallback(async (p) => {
+  const isAdmin = user?.role === 'admin_pay' || user?.role === 'admin_trade';
+  const isTeamleader = user?.is_teamleader || user?.role === 'teamleader';
+  const isLeadership = isAdmin || isTeamleader;
+
+  const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [kpisR, actR, lbR, hotR, revR, cbR, dlR] = await Promise.allSettled([
-      apiFetch(`/dashboard/kpis?period=${p}`),
-      apiFetch('/dashboard/activity-feed'),
-      apiFetch(`/dashboard/leaderboard?period=${p}`),
-      apiFetch('/dashboard/hot-prospects'),
-      apiFetch('/dashboard/revenue-pipeline'),
-      apiFetch('/callbacks/?today_only=true'),
-      apiFetch('/dashboard/my-daily-list'),
-    ]);
-    if (kpisR.status === 'fulfilled') setKpis(kpisR.value);
-    if (actR.status === 'fulfilled') setActivity(actR.value?.activities || actR.value?.items || []);
-    if (lbR.status === 'fulfilled') setLeaderboard(lbR.value?.leaderboard || lbR.value?.entries || []);
-    if (hotR.status === 'fulfilled') setHotProspects(hotR.value?.hot_prospects || hotR.value?.items || []);
-    if (revR.status === 'fulfilled') setRevenuePipeline(revR.value);
-    if (cbR.status === 'fulfilled') setCallbacks(cbR.value?.callbacks || cbR.value?.items || cbR.value || []);
-    if (dlR.status === 'fulfilled') setDailyList(dlR.value?.calls || dlR.value?.items || []);
-    setLoading(false);
+    try {
+      const [kpiRes, pipeRes, actRes, targetRes, dailyRes, cbRes] = await Promise.allSettled([
+        api('/api/v1/dashboard/kpis?period=today'),
+        api('/api/v1/dashboard/pipeline'),
+        api('/api/v1/dashboard/activity-feed?page_size=10'),
+        api('/api/v1/dashboard/targets'),
+        api('/api/v1/dashboard/my-daily-list'),
+        api('/api/v1/callbacks/?today_only=true'),
+      ]);
+      if (kpiRes.status === 'fulfilled') setKpis(kpiRes.value);
+      if (pipeRes.status === 'fulfilled') setPipeline(pipeRes.value.pipeline || []);
+      if (actRes.status === 'fulfilled') setActivities(actRes.value.activities || []);
+      if (targetRes.status === 'fulfilled') setTargets(targetRes.value.targets || []);
+      if (dailyRes.status === 'fulfilled') setDailyList(dailyRes.value.calls || []);
+      if (cbRes.status === 'fulfilled') setCallbacks(cbRes.value.callbacks || []);
+    } catch (err) {
+      console.error('Dashboard fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  useEffect(() => {
-    loadData(period);
-    const interval = setInterval(() => loadData(period), 60000);
-    return () => clearInterval(interval);
-  }, [period, loadData]);
+  useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const handlePeriod = useCallback(async (p) => {
-    setPeriod(p);
-    loadData(p);
-    try { await apiPut('/dashboard/my-period', { period: p }); } catch (_) {}
-  }, [loadData]);
+  // Derive KPI cards from real data
+  const totalPipeline = pipeline.reduce((sum, s) => sum + s.count, 0);
+  const kpiCards = [
+    {
+      title: isLeadership ? 'Totaal Leads' : 'Mijn Leads',
+      value: kpis?.leads_assigned ?? '—',
+      icon: Users,
+      bg: '#3d61a4',
+      detail: `${kpis?.by_stage?.lead ?? 0} in lead fase`,
+      action: () => navigate('/leads'),
+    },
+    {
+      title: isLeadership ? 'Calls Team' : 'Mijn Calls',
+      value: kpis?.calls ?? '—',
+      icon: Phone,
+      bg: '#5a7fc2',
+      detail: `${kpis?.contacted ?? 0} contacten bereikt`,
+      action: () => setActiveModal('calls'),
+    },
+    {
+      title: isLeadership ? 'Pipeline Team' : 'Mijn Pipeline',
+      value: totalPipeline,
+      icon: TrendingUp,
+      bg: '#0a2d6b',
+      detail: `${pipeline.length} fases`,
+      action: () => setActiveModal('pipeline'),
+    },
+    {
+      title: 'Conversieratio',
+      value: kpis?.conversion_rate != null ? `${kpis.conversion_rate}%` : '—',
+      icon: Target,
+      bg: '#011745',
+      detail: `${kpis?.converted ?? 0} van ${kpis?.contacted ?? 0} geconverteerd`,
+      action: () => setActiveModal('conversion'),
+    },
+  ];
 
-  const convRate = useMemo(() => {
-    return Math.round(kpis?.conversion_rate || 0);
-  }, [kpis]);
+  const stageLabels = {
+    lead: 'Leads',
+    prospect: 'Prospects',
+    onboarding_sales: 'Onboarding Sales',
+    onboarding_backoffice: 'Onboarding Backoffice',
+    client: 'Clients',
+  };
 
-  const greeting = useMemo(() => {
-    const h = new Date().getHours();
-    const name = user?.first_name || user?.full_name?.split(' ')[0] || 'daar';
-    if (h < 12) return `Goedemorgen, ${name}`;
-    if (h < 18) return `Goedemiddag, ${name}`;
-    return `Goedenavond, ${name}`;
-  }, [user]);
+  const actionLabels = {
+    created_lead: 'Lead aangemaakt',
+    updated: 'Bijgewerkt',
+    created_callback: 'Callback ingepland',
+    completed_callback: 'Callback afgerond',
+    moved_to_prospect: 'Naar Prospect verplaatst',
+    moved_to_onboarding: 'Naar Onboarding verplaatst',
+    activated_taperpay: 'TaperPay geactiveerd',
+    activated_tapertrade: 'TaperTrade geactiveerd',
+    called: 'Gebeld',
+    locked: 'Vergrendeld',
+    unlocked: 'Ontgrendeld',
+    snoozed: 'Gesnoozed',
+  };
 
-  const PERIODS = { today: 'Vandaag', week: 'Week', month: 'Maand' };
+  function timeAgo(dateStr) {
+    if (!dateStr) return '';
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'Zojuist';
+    if (mins < 60) return `${mins} min geleden`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours} uur geleden`;
+    return `${Math.floor(hours / 24)} dagen geleden`;
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 size={32} className="animate-spin" style={{ color: '#3d61a4' }} />
+      </div>
+    );
+  }
 
   return (
-    <div style={S.page}>
-
-      {/* Hero Header */}
-      <div style={S.hero}>
+    <div className="space-y-8 p-2">
+      {/* Welcome + Tabs */}
+      <div className="flex items-center justify-between">
         <div>
-          <h1 style={S.heroGreeting}>{greeting}</h1>
-          <p style={S.heroSub}>
-            {isPrivileged ? 'Team-overzicht · ' : ''}
-            {PERIODS[period]} · {new Date().toLocaleDateString('nl-NL', {
-              weekday: 'long', day: 'numeric', month: 'long'
-            })}
+          <h1 className="text-3xl font-bold tracking-tight" style={{ color: '#011745', fontFamily: 'Plus Jakarta Sans, Inter, sans-serif' }}>
+            Goedemorgen, {user?.full_name?.split(' ')[0]}
+          </h1>
+          <p className="text-sm mt-1" style={{ color: '#7b859e' }}>
+            {isLeadership ? 'Team dashboard overzicht' : 'Jouw persoonlijk dashboard'}
           </p>
         </div>
-        <div style={S.heroRight}>
-          <div style={S.periodSwitcher}>
-            {Object.entries(PERIODS).map(([p, lbl]) => (
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <div className="flex rounded-lg border border-[#e8eaf2] overflow-hidden mr-2">
               <button
-                key={p}
-                style={{ ...S.pill, ...(period === p ? S.pillActive : {}) }}
-                onClick={() => handlePeriod(p)}
+                onClick={() => setActiveTab('overview')}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'overview' ? 'text-white' : ''}`}
+                style={activeTab === 'overview' ? { backgroundColor: '#011745', color: 'white' } : { color: '#566079' }}
               >
-                {lbl}
+                <BarChart3 size={14} className="inline mr-1.5" style={{ marginTop: '-2px' }} />
+                Overzicht
               </button>
-            ))}
-          </div>
-          <button
-            style={S.refreshBtn}
-            onClick={() => loadData(period)}
-            title="Vernieuwen"
-          >
-            <RefreshCw
-              size={16}
-              color="#5a7fc2"
-              style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }}
-            />
+              <button
+                onClick={() => setActiveTab('targets')}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'targets' ? 'text-white' : ''}`}
+                style={activeTab === 'targets' ? { backgroundColor: '#011745', color: 'white' } : { color: '#566079' }}
+              >
+                <Settings size={14} className="inline mr-1.5" style={{ marginTop: '-2px' }} />
+                Targets Beheer
+              </button>
+            </div>
+          )}
+          <button onClick={fetchAll} className="p-2.5 rounded-lg hover:bg-[#eef2fa] transition-colors" style={{ color: '#3d61a4' }}>
+            <RefreshCw size={20} />
           </button>
         </div>
       </div>
 
-      {/* Content */}
-      <div style={S.content}>
-
-        {/* KPI Row */}
-        {!isLimited && (
-          <div style={S.kpiRow}>
-            <KpiCard icon={Users} label="Leads in pipeline" value={kpis?.leads_assigned}
-              sub={`Nieuw: ${kpis?.new_leads_in_period ?? 0} (${PERIODS[period]})`} accent="#3d61a4"
-              onClick={() => setModal({ title: 'Pipeline overzicht', data: {
-                'Totaal in pipeline': kpis?.leads_assigned,
-                [`Nieuw (${PERIODS[period]})`]: kpis?.new_leads_in_period ?? 0,
-                'Verdeling per fase': kpis?.by_stage,
-              }})} />
-            <KpiCard icon={PhoneCall} label="Calls gedaan" value={kpis?.calls}
-              sub={PERIODS[period]} accent="#5a7fc2"
-              onClick={() => setModal({ title: 'Calls gedaan', data: {
-                [`Calls (${PERIODS[period]})`]: kpis?.calls,
-                'Gecontacteerd (totaal)': kpis?.contacted,
-              }})} />
-            <KpiCard icon={Award} label="Prospects" value={kpis?.by_stage?.prospect || 0}
-              accent="#0a2d6b"
-              onClick={() => setModal({ title: 'Prospects', data: {
-                'Actieve prospects': kpis?.by_stage?.prospect || 0,
-              }})} />
-            <KpiCard icon={UserCheck} label="In onboarding" value={(kpis?.by_stage?.onboarding_sales || 0) + (kpis?.by_stage?.onboarding_backoffice || 0)}
-              accent="#3d61a4"
-              onClick={() => setModal({ title: 'In onboarding', data: {
-                'Onboarding sales': kpis?.by_stage?.onboarding_sales || 0,
-                'Onboarding backoffice': kpis?.by_stage?.onboarding_backoffice || 0,
-                'Totaal in onboarding': (kpis?.by_stage?.onboarding_sales || 0) + (kpis?.by_stage?.onboarding_backoffice || 0),
-              }})} />
-            <KpiCard icon={DollarSign} label="Revenue pipeline" value={revenuePipeline?.total_pipeline || 0}
-              prefix="€" accent="#011745"
-              onClick={() => setModal({ title: 'Revenue pipeline', data: revenuePipeline })} />
-            <KpiCard icon={TrendingUp} label="Conversieratio" value={convRate}
-              suffix="%" accent="#5a7fc2"
-              onClick={() => setModal({ title: 'Conversieratio', data: {
-                Leads: kpis?.leads_assigned, Prospects: kpis?.by_stage?.prospect, Ratio: `${convRate}%`
-              }})} />
-          </div>
-        )}
-
-        {/* Main grid */}
-        <div style={S.grid}>
-          {/* Left column */}
-          <div style={S.leftCol}>
-            {isSales && (
-              <div style={S.card}>
-                <div style={S.cardHdr}>
-                  <BarChart2 size={16} color="#3d61a4" />
-                  <span style={S.cardTitle}>Revenue Pipeline</span>
+      {/* Admin Targets Tab */}
+      {activeTab === 'targets' && isAdmin ? (
+        <AdminTargetsTab isAdmin={isAdmin} />
+      ) : (
+        <>
+          {/* KPI Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {kpiCards.map((kpi, idx) => {
+              const Icon = kpi.icon;
+              return (
+                <div key={idx} onClick={kpi.action}
+                  className="bg-white rounded-2xl p-6 shadow-sm hover:shadow-lg transition-all border border-[#e8eaf2] cursor-pointer hover:-translate-y-1">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="p-3 rounded-xl text-white" style={{ backgroundColor: kpi.bg }}>
+                      <Icon size={24} />
+                    </div>
+                  </div>
+                  <p className="text-sm font-medium mb-1" style={{ color: '#7b859e' }}>{kpi.title}</p>
+                  <p className="text-3xl font-bold mb-2" style={{ color: '#011745', fontFamily: 'Plus Jakarta Sans, sans-serif' }}>
+                    {kpi.value}
+                  </p>
+                  <p className="text-xs font-medium" style={{ color: '#3d61a4' }}>{kpi.detail}</p>
                 </div>
-                <RevenuePipeline data={revenuePipeline} />
-              </div>
-            )}
+              );
+            })}
+          </div>
 
-            <div style={S.card}>
-              <div style={S.cardHdr}>
-                <Star size={16} color="#3d61a4" />
-                <span style={S.cardTitle}>Leaderboard · {PERIODS[period]}</span>
-              </div>
-              {leaderboard.length === 0
-                ? <div style={S.empty}>Geen data beschikbaar</div>
-                : <div style={S.lbList}>
-                    {leaderboard.map((entry, i) => (
-                      <LeaderboardCard
-                        key={entry.user_id || i}
-                        entry={entry}
-                        rank={i}
-                        isCurrentUser={entry.user_id === user?.id}
-                        onClick={() => setModal({
-                          title: entry.full_name || entry.name,
-                          data: { Calls: entry.calls, Prospects: entry.prospects,
-                                  Klanten: entry.clients, Score: entry.score }
-                        })}
-                      />
+          {/* Main Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Pipeline Funnel */}
+            <div className="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-[#e8eaf2]">
+              <h2 className="text-xl font-bold mb-6" style={{ color: '#011745' }}>Sales Funnel</h2>
+              {pipeline.length === 0 ? (
+                <p className="text-sm" style={{ color: '#7b859e' }}>Geen pipeline data beschikbaar</p>
+              ) : (
+                <div className="space-y-4">
+                  {pipeline.map((item, idx) => {
+                    const maxCount = Math.max(...pipeline.map(p => p.count), 1);
+                    const pct = Math.round((item.count / maxCount) * 100);
+                    const colors = ['#3d61a4', '#5a7fc2', '#0a2d6b', '#011745', '#7b859e'];
+                    return (
+                      <div key={idx}>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium text-sm" style={{ color: '#566079' }}>
+                            {stageLabels[item.stage] || item.stage}
+                          </span>
+                          <span className="text-sm font-bold" style={{ color: '#3d61a4' }}>
+                            {item.count}
+                          </span>
+                        </div>
+                        <div className="w-full bg-[#f3f4f8] rounded-full h-3 overflow-hidden">
+                          <div className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${pct}%`, backgroundColor: colors[idx % colors.length] }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Callbacks + Daily List */}
+            <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#e8eaf2]">
+              <h2 className="text-xl font-bold mb-4" style={{ color: '#011745' }}>Vandaag</h2>
+
+              {/* Callbacks */}
+              <div className="mb-6">
+                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: '#566079' }}>
+                  <Clock size={14} /> Callbacks ({callbacks.length})
+                </h3>
+                {callbacks.length === 0 ? (
+                  <p className="text-xs" style={{ color: '#a4abbe' }}>Geen callbacks vandaag</p>
+                ) : (
+                  <div className="space-y-2">
+                    {callbacks.slice(0, 5).map(cb => (
+                      <div key={cb.id} className="p-2.5 rounded-lg border border-[#e8eaf2] flex items-center gap-2">
+                        <Phone size={12} style={{ color: '#3d61a4' }} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate" style={{ color: '#011745' }}>
+                            {cb.lead?.company_name || `Lead #${cb.lead_id}`}
+                          </p>
+                          <p className="text-[10px]" style={{ color: '#7b859e' }}>
+                            {cb.scheduled_at ? new Date(cb.scheduled_at).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                          </p>
+                        </div>
+                      </div>
                     ))}
                   </div>
-              }
-            </div>
-
-            {isSales && (
-              <div style={S.card}>
-                <div style={S.cardHdr}>
-                  <Flame size={16} color="#ef4444" />
-                  <span style={S.cardTitle}>Hot Prospects</span>
-                  {hotProspects.length > 0 && (
-                    <span style={S.cardBadge}>{hotProspects.length}</span>
-                  )}
-                </div>
-                <HotProspects items={hotProspects} navigate={navigate} />
-              </div>
-            )}
-          </div>
-
-          {/* Right column */}
-          <div style={S.rightCol}>
-            <div style={S.card}>
-              <div style={S.cardHdr}>
-                <Activity size={16} color="#3d61a4" />
-                <span style={S.cardTitle}>Activiteit</span>
-              </div>
-              <ActivityFeed items={activity} />
-            </div>
-
-            <div style={S.card}>
-              <div style={S.cardHdr}>
-                <Calendar size={16} color="#3d61a4" />
-                <span style={S.cardTitle}>Vandaag</span>
-                {(callbacks.length + dailyList.length) > 0 && (
-                  <span style={S.cardBadge}>{callbacks.length + dailyList.length}</span>
                 )}
               </div>
-              <TodayPanel callbacks={callbacks} dailyList={dailyList} navigate={navigate} onCallbacksChange={() => loadData(period)} />
+
+              {/* Daily list */}
+              <div>
+                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: '#566079' }}>
+                  <Users size={14} /> Bellijst ({dailyList.length})
+                </h3>
+                {dailyList.length === 0 ? (
+                  <p className="text-xs" style={{ color: '#a4abbe' }}>Bellijst is leeg</p>
+                ) : (
+                  <div className="space-y-2">
+                    {dailyList.slice(0, 5).map(item => (
+                      <div key={item.id} className="p-2.5 rounded-lg border border-[#e8eaf2] flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${item.is_called ? 'bg-green-400' : 'bg-[#a4abbe]'}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate" style={{ color: '#011745' }}>{item.company_name}</p>
+                          <p className="text-[10px]" style={{ color: '#7b859e' }}>{item.contact_name}</p>
+                        </div>
+                        {item.contact_mobile && (
+                          <a href={`tel:${item.contact_mobile}`} className="text-[10px] font-medium" style={{ color: '#3d61a4' }}>
+                            <Phone size={11} />
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Activity Feed + Targets */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Activity */}
+            <div className="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-[#e8eaf2]">
+              <h2 className="text-xl font-bold mb-6" style={{ color: '#011745' }}>Recente Activiteiten</h2>
+              {activities.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <AlertCircle size={32} style={{ color: '#cdd1e0' }} className="mb-3" />
+                  <p style={{ color: '#7b859e' }}>Geen recente activiteiten</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {activities.map((act) => (
+                    <div key={act.id} className="flex items-start gap-3 pb-3 border-b border-[#f3f4f8] last:border-b-0">
+                      <div className="p-2 rounded-lg flex-shrink-0" style={{ backgroundColor: '#eef2fa' }}>
+                        <Activity size={16} style={{ color: '#3d61a4' }} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium" style={{ color: '#011745' }}>
+                          {actionLabels[act.action] || act.action}
+                          {act.lead && (
+                            <span style={{ color: '#3d61a4' }}> — {act.lead.company_name}</span>
+                          )}
+                        </p>
+                        <p className="text-xs mt-0.5" style={{ color: '#7b859e' }}>
+                          {act.user_name} • {timeAgo(act.created_at)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Targets */}
+            <div className="rounded-2xl p-6 text-white" style={{ background: 'linear-gradient(135deg, #011745, #3d61a4)' }}>
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold">
+                  {isLeadership ? 'Team Targets' : 'Mijn Targets'}
+                </h2>
+                {isLeadership && (
+                  <button
+                    onClick={() => setActiveModal('team-breakdown')}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 transition-colors"
+                  >
+                    Breakdown
+                  </button>
+                )}
+              </div>
+              {targets.length === 0 ? (
+                <p className="text-sm opacity-80">
+                  {isAdmin ? 'Geen targets ingesteld. Ga naar Targets Beheer om targets in te stellen.' : 'Geen targets ingesteld.'}
+                </p>
+              ) : (
+                <div className="space-y-6">
+                  {targets.map((t, idx) => (
+                    <div key={t.id || idx}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium opacity-90">
+                          {TARGET_TYPE_LABELS[t.target_type] || t.target_type}
+                        </span>
+                        <span className="text-sm font-bold">{t.percentage}%</span>
+                      </div>
+                      <div className="w-full bg-white/20 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{ width: `${Math.min(t.percentage, 100)}%`, backgroundColor: t.percentage >= 100 ? '#22c55e' : 'white' }}
+                        />
+                      </div>
+                      <p className="text-xs opacity-70 mt-1">
+                        {t.progress}/{t.target_value} • {PERIOD_LABELS[t.period] || t.period}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Quick Stats */}
+              <div className="mt-8 pt-6 border-t border-white/20">
+                <div className="mb-4">
+                  <p className="text-sm opacity-70 mb-1">Volgende Callback</p>
+                  {callbacks.length > 0 ? (
+                    <p className="text-sm font-semibold">
+                      {new Date(callbacks[0].scheduled_at).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}
+                      {' — '}
+                      {callbacks[0].lead?.company_name || 'Onbekend'}
+                    </p>
+                  ) : (
+                    <p className="text-sm opacity-60">Geen callbacks</p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm opacity-70 mb-1">Bellijst Status</p>
+                  <p className="text-sm font-semibold">
+                    {dailyList.filter(d => d.is_called).length}/{dailyList.length} gebeld
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Pipeline Detail Modal */}
+      <DetailModal isOpen={activeModal === 'pipeline'} onClose={() => setActiveModal(null)} title="Pipeline Overzicht">
+        <div className="space-y-6">
+          {pipeline.map((item, idx) => (
+            <div key={idx} className="border border-[#e8eaf2] rounded-lg p-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-bold" style={{ color: '#011745' }}>{stageLabels[item.stage] || item.stage}</h3>
+                <span className="text-2xl font-bold" style={{ color: '#3d61a4' }}>{item.count}</span>
+              </div>
+            </div>
+          ))}
+          <div className="border-t border-[#e8eaf2] pt-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold" style={{ color: '#011745' }}>Totaal</h3>
+              <span className="text-2xl font-bold" style={{ color: '#011745' }}>{totalPipeline}</span>
             </div>
           </div>
         </div>
-      </div>
+      </DetailModal>
 
-      {modal && <DetailModal title={modal.title} data={modal.data} onClose={() => setModal(null)} />}
+      {/* Conversion Modal */}
+      <DetailModal isOpen={activeModal === 'conversion'} onClose={() => setActiveModal(null)} title="Conversie Details">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 rounded-xl" style={{ backgroundColor: '#eef2fa' }}>
+              <p className="text-sm" style={{ color: '#7b859e' }}>Gecontacteerd</p>
+              <p className="text-3xl font-bold" style={{ color: '#011745' }}>{kpis?.contacted ?? 0}</p>
+            </div>
+            <div className="p-4 rounded-xl" style={{ backgroundColor: '#eef2fa' }}>
+              <p className="text-sm" style={{ color: '#7b859e' }}>Geconverteerd</p>
+              <p className="text-3xl font-bold" style={{ color: '#3d61a4' }}>{kpis?.converted ?? 0}</p>
+            </div>
+          </div>
+          <div className="p-4 rounded-xl text-center" style={{ backgroundColor: '#011745' }}>
+            <p className="text-sm text-white/70">Conversieratio</p>
+            <p className="text-4xl font-bold text-white">{kpis?.conversion_rate ?? 0}%</p>
+          </div>
+        </div>
+      </DetailModal>
 
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap');
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
-        * { box-sizing: border-box; }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-thumb { background: #cdd1e0; border-radius: 4px; }
-      `}</style>
+      {/* Calls Modal */}
+      <DetailModal isOpen={activeModal === 'calls'} onClose={() => setActiveModal(null)} title="Calls Vandaag">
+        <div className="text-center py-8">
+          <p className="text-5xl font-bold mb-2" style={{ color: '#3d61a4' }}>{kpis?.calls ?? 0}</p>
+          <p className="text-sm" style={{ color: '#7b859e' }}>calls gemaakt vandaag</p>
+          <div className="mt-4 p-4 rounded-xl" style={{ backgroundColor: '#eef2fa' }}>
+            <p className="text-sm" style={{ color: '#566079' }}>
+              {kpis?.contacted ?? 0} contacten bereikt van {kpis?.leads_assigned ?? 0} {isLeadership ? 'team leads' : 'leads'}
+            </p>
+          </div>
+        </div>
+      </DetailModal>
+
+      {/* Team Breakdown Modal */}
+      <DetailModal isOpen={activeModal === 'team-breakdown'} onClose={() => setActiveModal(null)} title="Team Targets Breakdown" wide>
+        <TeamBreakdownContent />
+      </DetailModal>
     </div>
   );
-}
-
-// ─── Styles ───────────────────────────────────────────────────────────────
-
-const S = {
-  page: {
-    fontFamily: "'Inter', -apple-system, sans-serif",
-    background: '#f4f6fb',
-    minHeight: '100vh',
-    color: '#252f4a',
-  },
-  hero: {
-    background: 'linear-gradient(135deg, #011745 0%, #0a2d6b 100%)',
-    padding: '32px 32px 28px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: 16,
-  },
-  heroGreeting: {
-    fontFamily: "'Plus Jakarta Sans', sans-serif",
-    fontSize: 28, fontWeight: 800, color: '#f7f8fc',
-    margin: 0, marginBottom: 4, letterSpacing: '-0.3px',
-  },
-  heroSub: { color: '#5a7fc2', fontSize: 14, margin: 0, fontWeight: 500 },
-  heroRight: { display: 'flex', alignItems: 'center', gap: 12 },
-  periodSwitcher: {
-    display: 'flex', background: 'rgba(255,255,255,0.08)',
-    borderRadius: 10, padding: 3, gap: 2,
-  },
-  pill: {
-    background: 'transparent', border: 'none', borderRadius: 8,
-    padding: '6px 16px', fontSize: 13, fontWeight: 600,
-    color: '#a4abbe', cursor: 'pointer', transition: 'all 0.2s ease',
-    fontFamily: "'Inter', sans-serif",
-  },
-  pillActive: {
-    background: '#3d61a4', color: '#f7f8fc',
-    boxShadow: '0 2px 8px rgba(61,97,164,0.4)',
-  },
-  refreshBtn: {
-    background: 'rgba(255,255,255,0.08)', border: 'none',
-    borderRadius: 8, padding: 8, cursor: 'pointer',
-    display: 'flex', alignItems: 'center',
-  },
-  content: { padding: '28px 32px', maxWidth: 1600, margin: '0 auto' },
-  kpiRow: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))',
-    gap: 16, marginBottom: 28,
-  },
-  kpiCard: {
-    background: '#fff', borderRadius: 14,
-    padding: '20px 20px 16px', position: 'relative',
-    overflow: 'hidden', boxShadow: '0 2px 8px rgba(1,23,69,0.07)',
-    transition: 'all 0.25s ease', animation: 'fadeUp 0.4s ease both',
-  },
-  kpiAccent: {
-    position: 'absolute', top: 0, left: 0, right: 0,
-    height: 3, borderRadius: '14px 14px 0 0',
-  },
-  kpiIconWrap: { marginBottom: 10, marginTop: 4 },
-  kpiValue: {
-    fontFamily: "'Plus Jakarta Sans', sans-serif",
-    fontSize: 28, fontWeight: 800, color: '#011745',
-    letterSpacing: '-0.5px', lineHeight: 1, marginBottom: 4,
-  },
-  kpiLabel: {
-    fontSize: 12, fontWeight: 600, color: '#7b859e',
-    textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2,
-  },
-  kpiSub: { fontSize: 11, color: '#a4abbe' },
-  grid: { display: 'grid', gridTemplateColumns: '1fr 380px', gap: 20, alignItems: 'start' },
-  leftCol: { display: 'flex', flexDirection: 'column', gap: 20 },
-  rightCol: { display: 'flex', flexDirection: 'column', gap: 20 },
-  card: {
-    background: '#fff', borderRadius: 14,
-    boxShadow: '0 2px 8px rgba(1,23,69,0.07)',
-    overflow: 'hidden', animation: 'fadeUp 0.5s ease both',
-  },
-  cardHdr: {
-    display: 'flex', alignItems: 'center', gap: 8,
-    padding: '16px 20px', borderBottom: '1px solid #f3f4f8',
-  },
-  cardTitle: {
-    fontFamily: "'Plus Jakarta Sans', sans-serif",
-    fontWeight: 700, fontSize: 14, color: '#011745', flex: 1,
-  },
-  cardBadge: {
-    background: '#eef2fa', color: '#3d61a4',
-    fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
-  },
-  empty: { padding: '24px 20px', textAlign: 'center', color: '#a4abbe', fontSize: 13 },
-  lbList: { padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 },
-  lbRow: {
-    display: 'flex', alignItems: 'center', gap: 12,
-    padding: '10px 14px', borderRadius: 10, background: '#f7f8fc',
-  },
-  lbRank: { fontSize: 12, fontWeight: 700, minWidth: 28, display: 'flex', alignItems: 'center' },
-  lbAvatar: {
-    width: 34, height: 34, borderRadius: '50%',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0,
-  },
-  lbInfo: { flex: 1, minWidth: 0 },
-  lbName: {
-    fontSize: 13, fontWeight: 600, color: '#011745',
-    display: 'flex', alignItems: 'center', gap: 6,
-    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-  },
-  youBadge: {
-    fontSize: 10, fontWeight: 700, background: '#eef2fa',
-    color: '#3d61a4', padding: '1px 6px', borderRadius: 4,
-  },
-  lbBadges: { display: 'flex', gap: 6, marginTop: 3 },
-  badge: {
-    fontSize: 10, background: '#f3f4f8', padding: '2px 6px',
-    borderRadius: 4, color: '#566079', fontWeight: 500,
-  },
-  lbScore: {
-    fontFamily: "'Plus Jakarta Sans', sans-serif",
-    fontWeight: 800, fontSize: 16, color: '#011745',
-  },
-  feedList: { padding: '8px 0', maxHeight: 360, overflowY: 'auto' },
-  feedItem: { display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 20px' },
-  feedDot: { width: 8, height: 8, borderRadius: '50%', flexShrink: 0, marginTop: 4 },
-  feedContent: { flex: 1, minWidth: 0 },
-  feedText: {
-    fontSize: 13, color: '#252f4a', fontWeight: 500, display: 'block',
-    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-  },
-  feedMeta: { fontSize: 11, color: '#a4abbe', marginTop: 2, display: 'block' },
-  feedBadge: {
-    fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4,
-    whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.3px',
-  },
-  hotItem: {
-    display: 'flex', alignItems: 'center', gap: 10,
-    padding: '10px 20px', cursor: 'pointer',
-    transition: 'background 0.15s', borderBottom: '1px solid #f3f4f8',
-  },
-  hotInfo: { flex: 1, minWidth: 0 },
-  hotName: {
-    fontSize: 13, fontWeight: 600, color: '#011745',
-    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-  },
-  hotSub: { fontSize: 11, color: '#a4abbe', marginTop: 1 },
-  hotRev: { fontSize: 12, fontWeight: 700, color: '#3d61a4', whiteSpace: 'nowrap' },
-  pipeWrap: {
-    padding: '20px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
-  },
-  pipeStage: { display: 'flex', alignItems: 'center', gap: 8 },
-  pipeBar: {
-    borderRadius: 8, padding: '10px 16px', display: 'flex',
-    flexDirection: 'column', alignItems: 'center', minWidth: 95,
-  },
-  pipeLabel: {
-    fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.7)',
-    textTransform: 'uppercase', letterSpacing: '0.5px',
-  },
-  pipeAmt: { fontSize: 14, fontWeight: 700, color: '#fff', marginTop: 3 },
-  pipeTotal: {
-    marginLeft: 'auto', background: '#eef2fa', borderRadius: 10,
-    padding: '10px 18px', display: 'flex', flexDirection: 'column', alignItems: 'center',
-  },
-  pipeTotalLbl: {
-    fontSize: 10, fontWeight: 600, color: '#7b859e',
-    textTransform: 'uppercase', letterSpacing: '0.5px',
-  },
-  pipeTotalVal: {
-    fontFamily: "'Plus Jakarta Sans', sans-serif",
-    fontSize: 20, fontWeight: 800, color: '#011745',
-  },
-  hotRevBadge: {
-    width: '100%', marginTop: 8, background: '#fef2f2',
-    color: '#ef4444', fontSize: 13, fontWeight: 600,
-    padding: '8px 16px', borderRadius: 8, textAlign: 'center',
-  },
-  todayItem: {
-    display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px',
-    cursor: 'pointer', transition: 'background 0.15s', borderBottom: '1px solid #f3f4f8',
-  },
-  todayInfo: {
-    flex: 1, display: 'flex', justifyContent: 'space-between',
-    alignItems: 'center', minWidth: 0,
-  },
-  todayName: {
-    fontSize: 13, fontWeight: 600, color: '#252f4a',
-    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-  },
-  todayTime: {
-    fontSize: 11, color: '#7b859e', display: 'flex',
-    alignItems: 'center', whiteSpace: 'nowrap', marginLeft: 8,
-  },
-  modalOverlay: {
-    position: 'fixed', inset: 0, background: 'rgba(1,23,69,0.55)',
-    backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex',
-    alignItems: 'center', justifyContent: 'center', animation: 'fadeUp 0.2s ease',
-  },
-  modalBox: {
-    background: '#fff', borderRadius: 16, width: '90%', maxWidth: 480,
-    boxShadow: '0 20px 60px rgba(1,23,69,0.3)', overflow: 'hidden',
-  },
-  modalHeader: {
-    background: 'linear-gradient(135deg, #011745, #0a2d6b)',
-    padding: '18px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-  },
-  modalTitle: {
-    fontFamily: "'Plus Jakarta Sans', sans-serif",
-    fontWeight: 700, fontSize: 16, color: '#f7f8fc',
-  },
-  modalClose: {
-    background: 'rgba(255,255,255,0.12)', border: 'none', borderRadius: 6,
-    padding: 4, cursor: 'pointer', color: '#f7f8fc', display: 'flex', alignItems: 'center',
-  },
-  modalBody: { padding: '20px 22px', maxHeight: 460, overflowY: 'auto' },
-  modalRow: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '8px 0', borderBottom: '1px solid #f3f4f8', gap: 16,
-  },
-  modalKey: { fontSize: 13, fontWeight: 600, color: '#566079' },
-  modalVal: { fontSize: 13, fontWeight: 600, color: '#011745', textAlign: 'right' },
-  modalSectionRow: {
-    padding: '10px 0 6px', borderBottom: '1px solid #f3f4f8',
-    display: 'flex', flexDirection: 'column', gap: 6,
-  },
-  modalSectionKey: {
-    fontSize: 13, fontWeight: 700, color: '#011745', marginBottom: 4,
-  },
-  modalSubList: {
-    display: 'flex', flexDirection: 'column', gap: 3,
-    paddingLeft: 8,
-  },
-  modalSubRow: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '4px 10px', background: '#f4f6fb', borderRadius: 6,
-  },
-  modalSubKey: { fontSize: 12, color: '#7b859e', fontWeight: 500 },
-  modalSubVal: { fontSize: 12, color: '#3d61a4', fontWeight: 700 },
 };
+
+export default DashboardPage;

@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
-  Users, Target, Settings, Loader2, RefreshCw, AlertCircle,
-  TrendingUp, Building2, Plus, Trash2, Edit3, Check, X,
-  BarChart2, Flame
+  Users, Target, Settings, Save, Loader2, RefreshCw, AlertCircle,
+  Phone, TrendingUp, ClipboardCheck, Building2, Trophy, Plus, Trash2, Edit3, Check, X,
+  BarChart2
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -37,7 +36,111 @@ const PERIODS = [
   { value: 'monthly', label: 'Maandelijks' },
 ];
 
+const SCORE_ITEMS = [
+  { key: 'call_points',       label: 'Calls',       icon: Phone,         color: '#566079', description: 'Punten per geregistreerd gesprek' },
+  { key: 'lead_points',       label: 'Lead',        icon: Users,         color: '#3d61a4', description: 'Punten per lead toegevoegd' },
+  { key: 'prospect_points',   label: 'Prospect',    icon: Target,        color: '#92400e', description: 'Punten als lead naar prospect' },
+  { key: 'onboarding_points', label: 'Onboarding',  icon: ClipboardCheck,color: '#166534', description: 'Punten als prospect naar onboarding' },
+  { key: 'client_points',     label: 'Client',      icon: Building2,     color: '#011745', description: 'Punten als onboarding naar client' },
+];
 
+// ── Scoring weights sectie ──────────────────────────────────────────────────
+function ScoringSection() {
+  const [weights, setWeights] = useState(null);
+  const [editing, setEditing] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    api('/api/v1/users/scoring-weights').then(setWeights).catch(e => setError(e.message));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const payload = {};
+      Object.keys(editing).forEach(k => { payload[k] = parseInt(editing[k]); });
+      const result = await api('/api/v1/users/scoring-weights', { method: 'PUT', body: JSON.stringify({ ...weights, ...payload }) });
+      setWeights(result);
+      setEditing({});
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const currentVal = (key) => editing[key] !== undefined ? editing[key] : (weights?.[key] ?? '');
+  const hasChanges = Object.keys(editing).length > 0;
+
+  return (
+    <div className="bg-white rounded-2xl border border-[#e8eaf2] shadow-sm p-6">
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h2 className="text-base font-bold text-[#011745] flex items-center gap-2">
+            <Trophy size={16} className="text-amber-500" /> Scoringssysteem
+          </h2>
+          <p className="text-xs text-[#7b859e] mt-0.5">Pas de puntenwaardes aan voor het sales dashboard ranking</p>
+        </div>
+        {hasChanges && (
+          <div className="flex gap-2">
+            <button onClick={() => setEditing({})} className="px-3 py-1.5 rounded-lg text-sm text-[#566079] bg-[#f3f4f8] hover:bg-[#e8eaf2] transition-colors">
+              Annuleren
+            </button>
+            <button onClick={handleSave} disabled={saving}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold text-white bg-[#3d61a4] hover:bg-[#0a2d6b] transition-colors disabled:opacity-50">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              {saved ? 'Opgeslagen!' : 'Opslaan'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+
+      {!weights ? (
+        <div className="flex justify-center py-8"><Loader2 size={24} className="animate-spin text-[#3d61a4]" /></div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {SCORE_ITEMS.map(item => {
+            const Icon = item.icon;
+            const val = currentVal(item.key);
+            const changed = editing[item.key] !== undefined;
+            return (
+              <div key={item.key} className={`rounded-xl border p-4 transition-all ${changed ? 'border-[#3d61a4] bg-[#eef2fa]' : 'border-[#e8eaf2] bg-[#f7f8fc]'}`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: item.color + '20' }}>
+                    <Icon size={16} style={{ color: item.color }} />
+                  </div>
+                  <p className="text-sm font-bold text-[#011745]">{item.label}</p>
+                </div>
+                <p className="text-[10px] text-[#a4abbe] mb-2">{item.description}</p>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number" min="0" value={val}
+                    onChange={e => setEditing(ed => ({ ...ed, [item.key]: e.target.value }))}
+                    className="w-full px-2 py-1.5 rounded-lg border text-center text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#3d61a4] bg-white"
+                    style={{ borderColor: changed ? '#3d61a4' : '#cdd1e0', color: item.color }}
+                  />
+                  <span className="text-xs text-[#a4abbe] whitespace-nowrap">pt</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Uitleg */}
+      <div className="mt-4 p-3 bg-[#f7f8fc] rounded-xl border border-[#e8eaf2]">
+        <p className="text-[10px] text-[#7b859e]">
+          <strong className="text-[#566079]">Hoe werkt scoring?</strong> Elke sales medewerker krijgt punten op basis van hun activiteit.
+          Score = (calls × {weights?.call_points || 2}) + (leads × {weights?.lead_points || 1}) + (prospects × {weights?.prospect_points || 10}) + (onboarding × {weights?.onboarding_points || 50}) + (clients × {weights?.client_points || 100})
+        </p>
+      </div>
+    </div>
+  );
+}
 
 // ── Targets per gebruiker ────────────────────────────────────────────────────
 function TargetsSection() {
@@ -92,18 +195,6 @@ function TargetsSection() {
     } catch (e) { setError(e.message); }
   };
 
-  const handleManualAchievement = async (targetId, userId) => {
-    try {
-      await api(`/api/v1/dashboard/targets/${targetId}/achievement`, {
-        method: 'POST',
-        body: JSON.stringify({ user_id: userId, amount: 1 }),
-      });
-      // Refresh targets to show updated progress
-      const d = await api(`/api/v1/dashboard/targets?user_id=${selectedUser.id}`);
-      setTargets(d.targets || []);
-    } catch (e) { setError(e.message); }
-  };
-
   return (
     <div className="bg-white rounded-2xl border border-[#e8eaf2] shadow-sm p-6">
       <div className="flex items-center justify-between mb-5">
@@ -142,7 +233,7 @@ function TargetsSection() {
           <p className="text-xs font-semibold text-[#566079] uppercase tracking-wider">
             Nieuw target voor {selectedUser?.full_name}
           </p>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs text-[#a4abbe] mb-1">Type</label>
               <select value={form.target_type} onChange={e => setForm(f => ({ ...f, target_type: e.target.value }))}
@@ -218,13 +309,6 @@ function TargetsSection() {
                     </p>
                   </div>
                 )}
-                <button
-                  onClick={() => handleManualAchievement(t.id, selectedUser?.id)}
-                  className="w-7 h-7 rounded-full bg-[#3d61a4] hover:bg-[#0a2d6b] text-white flex items-center justify-center text-sm font-bold transition-colors"
-                  title="Registreer behaalde deal"
-                >
-                  +
-                </button>
                 <button onClick={() => handleDeleteTarget(t.id)}
                   className="p-1.5 text-[#cdd1e0] hover:text-red-400 transition-colors rounded-lg">
                   <Trash2 size={15}/>
@@ -306,7 +390,7 @@ function MijnTeamSection() {
       ) : (
         <>
           {/* Cumulative stats grid */}
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {STAGE_CONFIG.map(s => (
               <div key={s.key} className="rounded-xl p-4 border border-[#e8eaf2]" style={{ backgroundColor: s.bg }}>
                 <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: s.color }}>{s.label}</p>
@@ -384,7 +468,7 @@ function MijnTeamSection() {
 
                   {/* Expanded detail */}
                   {isExpanded && (
-                    <div className="border-t border-[#e8eaf2] px-5 py-4 bg-[#f7f8fc] grid grid-cols-3 gap-4 text-sm">
+                    <div className="border-t border-[#e8eaf2] px-5 py-4 bg-[#f7f8fc] grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
                       <div>
                         <p className="text-xs text-[#a4abbe] mb-1">Pipeline revenue (prospects)</p>
                         <p className="font-bold text-[#92400e]">{fmt(m.pipeline_revenue)}</p>
@@ -495,7 +579,7 @@ function RevenueForecastSection() {
       ) : (
         <>
           {/* Totals bar */}
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {FORECAST_STAGES.map(s => (
               <div key={s.key} className="rounded-xl p-4 border border-[#e8eaf2]" style={{ backgroundColor: s.bg }}>
                 <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: s.color }}>{s.label}</p>
@@ -602,161 +686,11 @@ function RevenueForecastSection() {
   );
 }
 
-// ── Hot Prospects Section ────────────────────────────────────────────────────
-function HotProspectsSection() {
-  const navigate = useNavigate();
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    setLoading(true);
-    api('/api/v1/dashboard/hot-prospects')
-      .then(d => setData(d.hot_prospects || []))
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
-
-  // Sort by total_revenue desc
-  const sorted = [...data].sort((a, b) => (b.total_revenue || 0) - (a.total_revenue || 0));
-
-  const totalFx = data.reduce((s, p) => s + (p.fx_estimated_revenue || 0), 0);
-  const totalTf = data.reduce((s, p) => s + (p.tf_estimated_revenue || 0), 0);
-  const totalAll = data.reduce((s, p) => s + (p.total_revenue || 0), 0);
-
-  // Leeftijd kleur: < 7d groen, 7-21d oranje, > 21d rood
-  function hotAgeColor(setAt) {
-    if (!setAt) return '#a4abbe';
-    const days = Math.floor((Date.now() - new Date(setAt).getTime()) / 86400000);
-    if (days < 7) return '#166534';
-    if (days <= 21) return '#d97706';
-    return '#dc2626';
-  }
-
-  function hotAgeBg(setAt) {
-    if (!setAt) return '#f3f4f8';
-    const days = Math.floor((Date.now() - new Date(setAt).getTime()) / 86400000);
-    if (days < 7) return '#f0fdf4';
-    if (days <= 21) return '#fef3c7';
-    return '#fef2f2';
-  }
-
-  function hotAgeLabel(setAt) {
-    if (!setAt) return '—';
-    const days = Math.floor((Date.now() - new Date(setAt).getTime()) / 86400000);
-    if (days === 0) return 'Vandaag';
-    if (days === 1) return '1 dag';
-    return `${days} dagen`;
-  }
-
-  if (loading) return (
-    <div className="bg-white rounded-2xl border border-[#e8eaf2] shadow-sm p-8 flex justify-center">
-      <Loader2 size={28} className="animate-spin text-[#3d61a4]" />
-    </div>
-  );
-
-  if (error) return (
-    <div className="bg-white rounded-2xl border border-[#e8eaf2] shadow-sm p-6">
-      <p className="text-sm text-red-500 flex items-center gap-2"><AlertCircle size={16}/> {error}</p>
-    </div>
-  );
-
-  return (
-    <div className="bg-white rounded-2xl border border-[#e8eaf2] shadow-sm p-6 space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-base font-bold text-[#011745] flex items-center gap-2">
-            <Flame size={16} className="text-orange-500" /> Hot Prospects
-          </h2>
-          <p className="text-xs text-[#7b859e] mt-0.5">
-            {data.length} hot prospect{data.length !== 1 ? 's' : ''} · gesorteerd op revenue
-          </p>
-        </div>
-        <button
-          onClick={() => { setLoading(true); api('/api/v1/dashboard/hot-prospects').then(d => setData(d.hot_prospects || [])).catch(e => setError(e.message)).finally(() => setLoading(false)); }}
-          className="p-2 rounded-lg hover:bg-[#f3f4f8] transition-colors text-[#a4abbe] hover:text-[#3d61a4]"
-        >
-          <RefreshCw size={15}/>
-        </button>
-      </div>
-
-      {/* Total pipeline banner */}
-      {data.length > 0 && (
-        <div className="flex items-center gap-4 p-4 bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl border border-orange-200">
-          <Flame size={24} className="text-orange-500 flex-shrink-0" />
-          <div className="flex-1">
-            <p className="text-xs font-semibold text-orange-700 uppercase tracking-wider mb-0.5">Totale hot pipeline</p>
-            <p className="text-2xl font-black text-orange-600">{fmtEur(totalAll)}</p>
-          </div>
-          <div className="text-right text-xs text-orange-600 space-y-0.5">
-            <p>FX: <span className="font-bold">{fmtEur(totalFx)}</span></p>
-            <p>TF: <span className="font-bold">{fmtEur(totalTf)}</span></p>
-          </div>
-        </div>
-      )}
-
-      {data.length === 0 ? (
-        <div className="text-center py-10 bg-[#f7f8fc] rounded-xl border border-dashed border-[#cdd1e0]">
-          <Flame size={32} className="mx-auto mb-2 text-[#cdd1e0]" />
-          <p className="text-sm font-medium text-[#7b859e]">Geen hot prospects</p>
-          <p className="text-xs text-[#a4abbe] mt-1">Markeer prospects als hot via het vlamicoon in de prospects lijst</p>
-        </div>
-      ) : (
-        <div className="space-y-1">
-          {/* Table header */}
-          <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr] gap-3 px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-[#a4abbe]">
-            <span>Bedrijf</span>
-            <span>Sales owner</span>
-            <span className="text-right">FX rev.</span>
-            <span className="text-right">TF rev.</span>
-            <span className="text-right">Totaal</span>
-            <span className="text-right">Hot sinds</span>
-          </div>
-
-          {/* Rows */}
-          {sorted.map(p => (
-            <button
-              key={p.id}
-              onClick={() => navigate('/prospects')}
-              className="w-full grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr] gap-3 items-center px-4 py-3 bg-[#f7f8fc] hover:bg-[#eef2fa] rounded-xl border border-[#e8eaf2] hover:border-[#3d61a4] transition-all text-left"
-            >
-              <span className="text-sm font-semibold text-[#011745] truncate">{p.company_name}</span>
-              <span className="text-xs text-[#566079] truncate">{p.sales_owner_name || '—'}</span>
-              <span className="text-sm font-bold text-right text-[#3d61a4]">{fmtEur(p.fx_estimated_revenue)}</span>
-              <span className="text-sm font-bold text-right" style={{ color: '#92400e' }}>{fmtEur(p.tf_estimated_revenue)}</span>
-              <span className="text-sm font-black text-right text-[#011745]">{fmtEur(p.total_revenue)}</span>
-              <span className="text-right">
-                <span
-                  className="inline-block text-xs font-semibold px-2 py-0.5 rounded-full"
-                  style={{ color: hotAgeColor(p.hot_prospect_set_at), backgroundColor: hotAgeBg(p.hot_prospect_set_at) }}
-                >
-                  {hotAgeLabel(p.hot_prospect_set_at)}
-                </span>
-              </span>
-            </button>
-          ))}
-
-          {/* Totals row */}
-          <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr] gap-3 items-center px-4 py-3 bg-[#011745] rounded-xl mt-2">
-            <span className="text-sm font-bold text-white">Totaal ({data.length})</span>
-            <span></span>
-            <span className="text-sm font-bold text-right text-[#5a7fc2]">{fmtEur(totalFx)}</span>
-            <span className="text-sm font-bold text-right text-amber-300">{fmtEur(totalTf)}</span>
-            <span className="text-base font-black text-right text-white">{fmtEur(totalAll)}</span>
-            <span></span>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Main ──────────────────────────────────────────────────────────────────────
 const TABS = [
   { id: 'team',     label: 'Mijn Team',        icon: Users },
   { id: 'forecast', label: 'Revenue Forecast',  icon: BarChart2 },
-  { id: 'hot',      label: 'Hot Prospects',     icon: Flame },
+  { id: 'scoring',  label: 'Scoring',           icon: Trophy },
   { id: 'targets',  label: 'Targets',           icon: Target },
 ];
 
@@ -780,8 +714,8 @@ export default function TeamManagementPage() {
   return (
     <div className="min-h-screen bg-[#f7f8fc] p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-[#011745]">Team Management</h1>
-        <p className="text-sm text-[#7b859e] mt-0.5">Teamprestaties, hot prospects en targets</p>
+        <h1 className="text-2xl font-bold font-heading tracking-tight text-[#011745]">Team Management</h1>
+        <p className="text-sm text-[#7b859e] mt-0.5">Teamprestaties, scoringswaardes en targets</p>
       </div>
 
       {/* Tab bar */}
@@ -808,7 +742,7 @@ export default function TeamManagementPage() {
 
       {activeTab === 'team'     && <MijnTeamSection />}
       {activeTab === 'forecast' && <RevenueForecastSection />}
-      {activeTab === 'hot'      && <HotProspectsSection />}
+      {activeTab === 'scoring'  && <ScoringSection />}
       {activeTab === 'targets'  && <TargetsSection />}
     </div>
   );

@@ -387,7 +387,7 @@ export default function LeadsPage() {
         <div className="bg-white border-b border-[#e8eaf2] px-8 py-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-3xl font-bold text-[#011745]">Sales Leads</h1>
+              <h1 className="text-3xl font-bold font-heading tracking-tight text-[#011745]">Sales Leads</h1>
               <p className="text-[#7b859e] text-sm mt-1">
                 {loading ? 'Laden...' : (
                   <>{filteredLeads.length} leads • {leads.filter(l => !l.called).length} niet gebeld</>
@@ -675,7 +675,7 @@ export default function LeadsPage() {
       {/* Churn modal — reden vastleggen bij Geen interesse */}
       {churnModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+          <div className="bg-white rounded-2xl shadow-popup w-full max-w-md mx-4 p-6">
             <h3 className="text-lg font-bold mb-2" style={{ color: '#011745' }}>Geen interesse — reden vastleggen</h3>
             <p className="text-sm mb-4" style={{ color: '#7b859e' }}>Optioneel: leg de reden vast voor rapportage</p>
             <div className="space-y-3">

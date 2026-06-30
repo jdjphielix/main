@@ -201,7 +201,7 @@ const NewLeadModal = ({ isOpen, onClose, onLeadCreated }) => {
             company_industry: data.industry || prev.company_industry,
             kvk_number: data.kvk_number || prev.kvk_number,
             contact_phone: data.phone || prev.contact_phone,
-            contact_email: (data.contact_emails && data.contact_emails.find(e => e && e.includes('@'))) || prev.contact_email,
+            contact_email: (data.contact_emails && data.contact_emails[0]) || prev.contact_email,
           }));
         }
       } catch (err) {
@@ -401,7 +401,7 @@ const NewLeadModal = ({ isOpen, onClose, onLeadCreated }) => {
 
       {/* Modal */}
       <div
-        className="relative w-full max-w-2xl max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        className="relative w-full max-w-2xl max-h-[90vh] rounded-2xl shadow-popup overflow-hidden flex flex-col"
         style={{ backgroundColor: '#f7f8fc' }}
       >
         {/* Header */}

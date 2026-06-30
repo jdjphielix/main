@@ -74,7 +74,7 @@ export default function CallbacksPopup({ isOpen, onClose, onOpenAgenda }) {
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col overflow-hidden">
+      <div className="relative bg-white rounded-2xl shadow-popup w-full max-w-lg mx-4 max-h-[80vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="px-6 py-4 border-b border-[#e8eaf2] flex items-center justify-between"
           style={{ backgroundColor: '#f7f8fc' }}>
@@ -153,7 +153,7 @@ export default function CallbacksPopup({ isOpen, onClose, onOpenAgenda }) {
 
                 return (
                   <div key={cb.id}
-                    className="rounded-xl border p-4 transition-all hover:shadow-md"
+                    className="rounded-xl border p-4 transition-all hover:shadow-md hover:-translate-y-0.5"
                     style={{
                       borderColor: overdue ? '#fecaca' : '#e8eaf2',
                       backgroundColor: overdue ? '#fef2f2' : '#fff',
