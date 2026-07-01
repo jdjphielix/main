@@ -484,7 +484,7 @@ async def get_sales_dashboard(
                 uid = onboard_lead_to_uid[lead_id]
                 onboarding_rev[uid] = onboarding_rev.get(uid, 0) + rev
 
-    # Client revenue via ClientForecasting
+    # Client revenue via productlijnen (consistent met prospect/onboarding + dashboard.py)
     client_owner_map = (
         db.query(
             func.coalesce(Lead.sales_owner_id, Lead.locked_by_user_id).label("uid"),
@@ -500,21 +500,13 @@ async def get_sales_dashboard(
     client_lead_to_uid = {r.lead_id: r.uid for r in client_owner_map if r.uid in user_ids}
     client_rev: dict = {uid: 0.0 for uid in user_ids}
     if client_lead_to_uid:
-        fc_rows = db.query(ClientForecasting).filter(
-            ClientForecasting.lead_id.in_(list(client_lead_to_uid.keys()))
-        ).all()
-        for item in fc_rows:
-            uid = client_lead_to_uid.get(item.lead_id)
+        # Consistent met dashboard.py / prospect+onboarding: revenue via productlijnen
+        client_pl_map = product_lines_revenue_bulk(db, list(client_lead_to_uid.keys()))
+        for lead_id, rev in client_pl_map.items():
+            uid = client_lead_to_uid.get(lead_id)
             if uid is None:
                 continue
-            vol = item.volume_per_year or 0
-            hedge_pct = item.hedging_pct or 0
-            spot_m = item.spot_margin_pct or 0
-            hedge_m = item.hedging_margin_pct or 0
-            if spot_m == 0 and hedge_pct == 0 and (item.margin_per_year or 0) > 0:
-                client_rev[uid] = client_rev.get(uid, 0) + (item.margin_per_year or 0)
-            else:
-                client_rev[uid] = client_rev.get(uid, 0) + vol * (1 - hedge_pct) * spot_m + vol * hedge_pct * hedge_m
+            client_rev[uid] = client_rev.get(uid, 0) + rev
 
 
     # Bulk: hot prospect counts per sales owner
@@ -801,18 +793,13 @@ async def get_my_team(
 
     client_rev: dict = {uid: 0.0 for uid in member_ids}
     if c_map:
-        for item in db.query(ClientForecasting).filter(ClientForecasting.lead_id.in_(list(c_map.keys()))).all():
-            uid = c_map.get(item.lead_id)
+        # Consistent met dashboard.py / prospect+onboarding: revenue via productlijnen
+        client_pl_map = product_lines_revenue_bulk(db, list(c_map.keys()))
+        for lead_id, rev in client_pl_map.items():
+            uid = c_map.get(lead_id)
             if uid is None:
                 continue
-            vol = item.volume_per_year or 0
-            hedge_pct = item.hedging_pct or 0
-            spot_m = item.spot_margin_pct or 0
-            hedge_m = item.hedging_margin_pct or 0
-            if spot_m == 0 and hedge_pct == 0 and (item.margin_per_year or 0) > 0:
-                client_rev[uid] = client_rev.get(uid, 0) + (item.margin_per_year or 0)
-            else:
-                client_rev[uid] = client_rev.get(uid, 0) + vol * (1 - hedge_pct) * spot_m + vol * hedge_pct * hedge_m
+            client_rev[uid] = client_rev.get(uid, 0) + rev
 
     # Assemble
     members_data = []
@@ -953,18 +940,13 @@ async def get_team_revenue_forecast(
 
     client_rev_fc: dict = {uid: 0.0 for uid in member_ids}
     if c_map:
-        for item in db.query(ClientForecasting).filter(ClientForecasting.lead_id.in_(list(c_map.keys()))).all():
-            uid = c_map.get(item.lead_id)
+        # Consistent met dashboard.py / prospect+onboarding: revenue via productlijnen
+        client_pl_map = product_lines_revenue_bulk(db, list(c_map.keys()))
+        for lead_id, rev in client_pl_map.items():
+            uid = c_map.get(lead_id)
             if uid is None:
                 continue
-            vol = item.volume_per_year or 0
-            hedge_pct = item.hedging_pct or 0
-            spot_m = item.spot_margin_pct or 0
-            hedge_m = item.hedging_margin_pct or 0
-            if spot_m == 0 and hedge_pct == 0 and (item.margin_per_year or 0) > 0:
-                client_rev_fc[uid] = client_rev_fc.get(uid, 0) + (item.margin_per_year or 0)
-            else:
-                client_rev_fc[uid] = client_rev_fc.get(uid, 0) + vol * (1 - hedge_pct) * spot_m + vol * hedge_pct * hedge_m
+            client_rev_fc[uid] = client_rev_fc.get(uid, 0) + rev
 
     members_data_fc = []
     for u in team_members:

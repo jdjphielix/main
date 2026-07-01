@@ -620,6 +620,9 @@ async def send_back_to_onboarding_sales(
         "revision_status": str (needs_refactor | needs_clarification | rejected)
     }
     """
+    # Role check: only backoffice/admin/teamleader can send a dossier back to sales
+    if current_user.role not in ("backoffice", "admin_pay", "admin_trade") and not current_user.is_teamleader:
+        raise HTTPException(status_code=403, detail="Alleen backoffice/admin kan dit uitvoeren")
     lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -873,8 +876,10 @@ async def log_call(
     )
     db.add(log)
 
-    # Update lead last activity
-    lead.last_activity_at = datetime.now(timezone.utc)
+    # Update call tracking so calls tellen mee in KPI's
+    lead.last_called_at = datetime.now(timezone.utc)
+    lead.is_called = True
+    lead.call_count = (lead.call_count or 0) + 1
 
     db.commit()
     db.refresh(log)
@@ -1352,6 +1357,13 @@ async def delete_client_deal(
 
 # ── Compliance Cases (per client) ────────────────────────────────
 
+def _ensure_compliance_writer(current_user: User):
+    """Only backoffice/admin_pay/admin_trade/teamleader mogen compliance-cases
+    schrijven of verwijderen. Sales/extern → 403. GET blijft ongemoeid."""
+    if current_user.role not in ("backoffice", "admin_pay", "admin_trade") and not current_user.is_teamleader:
+        raise HTTPException(status_code=403, detail="Alleen backoffice/admin kan compliance-cases beheren")
+
+
 @router.get("/{lead_id}/compliance")
 async def get_client_compliance_cases(
     lead_id: int,
@@ -1397,6 +1409,7 @@ async def create_compliance_case(
     db: Session = Depends(get_db),
 ):
     """Create a new compliance case for a client."""
+    _ensure_compliance_writer(current_user)
     lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -1432,6 +1445,7 @@ async def update_compliance_case(
     db: Session = Depends(get_db),
 ):
     """Update a compliance case."""
+    _ensure_compliance_writer(current_user)
     case = db.query(ComplianceCase).filter(
         ComplianceCase.id == case_id,
         ComplianceCase.lead_id == lead_id,
@@ -1490,10 +1504,11 @@ async def delete_compliance_case(
     """Delete a compliance case and its linked case-document rows.
 
     Uses the same access model as the other compliance writes
-    (create/update) — any authenticated user with access to the lead.
+    (create/update) — alleen backoffice/admin_pay/admin_trade/teamleader.
     Only the ComplianceCaseDocument link rows are removed; the underlying
     Document records are left intact.
     """
+    _ensure_compliance_writer(current_user)
     case = db.query(ComplianceCase).filter(
         ComplianceCase.id == case_id,
         ComplianceCase.lead_id == lead_id,
