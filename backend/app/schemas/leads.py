@@ -63,6 +63,7 @@ class LeadUpdate(BaseModel):
     churn_reason: Optional[str] = None
     churn_to_competitor: Optional[str] = None
     revenue_potential: Optional[list] = None
+    tf_revenue_potential: Optional[list] = None
     manual_score: Optional[int] = None
     source: Optional[str] = None
     company_description: Optional[str] = None
@@ -133,7 +134,7 @@ class LeadResponse(BaseModel):
     revenue_approved_note: Optional[str] = None
     snoozed_until: Optional[datetime] = None
     snooze_reason: Optional[str] = None
-    tf_revenue_potential: Optional[float] = None
+    tf_revenue_potential: Optional[list] = None
     is_pinned: bool = False
 
     class Config:

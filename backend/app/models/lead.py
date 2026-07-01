@@ -183,6 +183,9 @@ class Lead(Base):
     # Revenue potential rows (JSON array: [{currency_pair, volume, margin_pct, revenue}])
     revenue_potential = Column(JSON)
 
+    # TF (Trade Finance) revenue potential rows (JSON array, mirrors revenue_potential for TF)
+    tf_revenue_potential = Column(JSON)
+
     # Prospect-specific fields (filled when pipeline_stage = prospect)
     prospect_data = relationship("ProspectData", back_populates="lead", uselist=False)
 

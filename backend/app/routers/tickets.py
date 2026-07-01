@@ -11,6 +11,15 @@ from datetime import datetime, timezone
 
 router = APIRouter(prefix="/api/v1/tickets", tags=["tickets"])
 
+# Roles that may NOT access tickets at all (module is internal/backoffice only)
+_TICKET_BLOCKED_ROLES = ("sales", "extern")
+
+
+def _block_sales_extern(current_user: User):
+    """Raise 403 for sales/extern users. Teamleaders are always allowed."""
+    if current_user.role in _TICKET_BLOCKED_ROLES and not current_user.is_teamleader:
+        raise HTTPException(status_code=403, detail="Geen toegang tot tickets")
+
 
 def _serialize_ticket(t: Ticket, created_by_name=None, assigned_to_name=None):
     return {
@@ -20,6 +29,7 @@ def _serialize_ticket(t: Ticket, created_by_name=None, assigned_to_name=None):
         "status": t.status,
         "priority": t.priority,
         "category": t.category,
+        "broker": t.broker,
         "created_by_id": t.created_by_id,
         "created_by_name": created_by_name,
         "assigned_to_id": t.assigned_to_id,
@@ -55,7 +65,8 @@ async def list_tickets(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List tickets — admins see all, others see own + assigned."""
+    """List tickets — admins see all, others see own + assigned. Blocked for sales/extern."""
+    _block_sales_extern(current_user)
     query = db.query(Ticket)
     is_admin = current_user.role in ("admin_pay", "admin_trade") or current_user.is_teamleader
     if not is_admin:
@@ -88,6 +99,7 @@ async def create_ticket(
     db: Session = Depends(get_db),
 ):
     """Create a new ticket."""
+    _block_sales_extern(current_user)
     if not data.get("title"):
         raise HTTPException(status_code=400, detail="Title is required")
     ticket = Ticket(
@@ -99,6 +111,7 @@ async def create_ticket(
         created_by_id=current_user.id,
         assigned_to_id=data.get("assigned_to_id"),
         status=data.get("status", "open"),
+        broker=data.get("broker"),
         follow_up_date=_parse_iso_dt(data.get("follow_up_date")),
     )
     db.add(ticket)
@@ -115,13 +128,14 @@ async def update_ticket(
     db: Session = Depends(get_db),
 ):
     """Update ticket status, priority, assignment."""
+    _block_sales_extern(current_user)
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
     is_admin = current_user.role in ("admin_pay", "admin_trade") or current_user.is_teamleader
     if not is_admin and ticket.created_by_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
-    for key in ["title", "description", "status", "priority", "category", "assigned_to_id", "related_lead_id"]:
+    for key in ["title", "description", "status", "priority", "category", "assigned_to_id", "related_lead_id", "broker"]:
         if key in data:
             setattr(ticket, key, data[key])
     if "follow_up_date" in data:
@@ -139,6 +153,7 @@ async def delete_ticket(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _block_sales_extern(current_user)
     is_admin = current_user.role in ("admin_pay", "admin_trade") or current_user.is_teamleader
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:

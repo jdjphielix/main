@@ -24,10 +24,12 @@ async def list_requirements(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List all onboarding requirements, optionally filtered by product_type."""
-    _allowed = ("admin_pay", "admin_trade", "backoffice", "teamleader")
-    if current_user.role not in _allowed and not current_user.is_teamleader:
-        raise HTTPException(status_code=403, detail="Geen toegang tot onboarding vereisten")
+    """List all onboarding requirements, optionally filtered by product_type.
+
+    Read-only: allowed for ALL authenticated users (incl. sales/extern) so
+    sales can see which documents backoffice/admin require. Create/update/
+    delete remain admin/teamleader-only.
+    """
     query = db.query(OnboardingRequirement)
     if product_type:
         query = query.filter(OnboardingRequirement.product_type == product_type)

@@ -367,7 +367,7 @@ async def update_lead(
     from sqlalchemy.orm.attributes import flag_modified
 
     update_data = lead_data.model_dump(exclude_unset=True)
-    _json_fields = {"onboarding_checklist", "revenue_potential", "ai_score_reasons"}
+    _json_fields = {"onboarding_checklist", "revenue_potential", "tf_revenue_potential", "ai_score_reasons"}
     for key, value in update_data.items():
         setattr(lead, key, value)
         # JSON columns need explicit change notification for SQLAlchemy
@@ -1504,6 +1504,42 @@ async def link_document_to_compliance(
     db.add(link)
     db.commit()
     return {"status": "linked", "compliance_case_id": case_id, "document_id": doc_id}
+
+
+@router.delete("/{lead_id}/compliance/{case_id}")
+async def delete_compliance_case(
+    lead_id: int,
+    case_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a compliance case and its linked case-document rows.
+
+    Uses the same access model as the other compliance writes
+    (create/update) — any authenticated user with access to the lead.
+    Only the ComplianceCaseDocument link rows are removed; the underlying
+    Document records are left intact.
+    """
+    case = db.query(ComplianceCase).filter(
+        ComplianceCase.id == case_id,
+        ComplianceCase.lead_id == lead_id,
+    ).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Compliance case not found")
+
+    # Remove linked case-document rows first (FK integrity)
+    db.query(ComplianceCaseDocument).filter(
+        ComplianceCaseDocument.compliance_case_id == case_id
+    ).delete(synchronize_session=False)
+
+    db.delete(case)
+
+    db.add(ActivityLog(
+        user_id=current_user.id, lead_id=lead_id,
+        action="deleted_compliance_case", entity_type="compliance_case", entity_id=case_id,
+    ))
+    db.commit()
+    return {"status": "deleted", "id": case_id}
 
 
 # ── Correspondentie (all mail & comms history) ───────────────────

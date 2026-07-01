@@ -50,10 +50,20 @@ async def create_calendar_event(
 
     # Build attendees list
     attendees = [{"email": user.email}]
+    _seen = {user.email}
     if invited_users:
         for inv_user in invited_users:
-            if inv_user.email and inv_user.email != user.email:
+            if inv_user.email and inv_user.email not in _seen:
                 attendees.append({"email": inv_user.email})
+                _seen.add(inv_user.email)
+    # Include external attendees (client e-mail addresses) so Google sends them invites
+    _ext = getattr(callback, "external_attendees", None) or []
+    if isinstance(_ext, str):
+        _ext = [_ext]
+    for ext_email in _ext:
+        if ext_email and ext_email not in _seen:
+            attendees.append({"email": ext_email})
+            _seen.add(ext_email)
 
     # Build description
     description_parts = []

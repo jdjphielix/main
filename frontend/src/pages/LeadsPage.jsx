@@ -433,7 +433,7 @@ export default function LeadsPage() {
           <div className="flex gap-1 mb-4 bg-[#f3f4f8] rounded-xl p-1 w-fit">
             {!isExtern && (
               <button
-                onClick={() => { setLeadsTab('algemeen'); setSearchQuery(''); setLoading(true); }}
+                onClick={() => { setLeadsTab('algemeen'); setLoading(true); }}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
                   leadsTab === 'algemeen'
                     ? 'bg-white text-[#011745] shadow-sm'
@@ -444,7 +444,7 @@ export default function LeadsPage() {
               </button>
             )}
             <button
-              onClick={() => { setLeadsTab('mijn'); setSearchQuery(''); setLoading(true); }}
+              onClick={() => { setLeadsTab('mijn'); setLoading(true); }}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
                 leadsTab === 'mijn' || isExtern
                   ? 'bg-[#011745] text-white shadow-sm'
@@ -455,7 +455,7 @@ export default function LeadsPage() {
             </button>
             {!isExtern && (
               <button
-                onClick={() => { setLeadsTab('closed'); setSearchQuery(''); setLoading(true); }}
+                onClick={() => { setLeadsTab('closed'); setLoading(true); }}
                 className={`px-4 py-2 text-sm font-medium rounded-lg flex items-center gap-2 transition-colors ${
                   leadsTab === 'closed'
                     ? 'bg-[#dc2626] text-white shadow-sm'

@@ -12,7 +12,7 @@ const STATUSES = {
   open:        { label: 'Open',           color: '#3d61a4', bg: '#eef2fa',  icon: Clock },
   in_progress: { label: 'In behandeling', color: '#d97706', bg: '#fffbeb',  icon: AlertCircle },
   pending:     { label: 'Pending',        color: '#0d9488', bg: '#f0fdfa',  icon: Clock },
-  waiting:     { label: 'Wachten',        color: '#7c3aed', bg: '#f5f3ff',  icon: Clock },
+  waiting:     { label: 'Wacht op reactie', color: '#7c3aed', bg: '#f5f3ff',  icon: Clock },
   with_broker: { label: 'Met broker',     color: '#0891b2', bg: '#ecfeff',  icon: AlertCircle },
   resolved:    { label: 'Opgelost',       color: '#16a34a', bg: '#f0fdf4',  icon: CheckCircle },
   closed:      { label: 'Gesloten',       color: '#7b859e', bg: '#f3f4f8',  icon: XCircle },
@@ -101,6 +101,7 @@ export default function TicketsPage() {
       category: ticket.category || 'other',
       assigned_to_id: ticket.assigned_to_id || '',
       follow_up_date: ticket.follow_up_date ? ticket.follow_up_date.slice(0, 10) : '',
+      broker: ticket.broker || '',
     });
   };
 
@@ -111,6 +112,7 @@ export default function TicketsPage() {
         ...editForm,
         assigned_to_id: editForm.assigned_to_id || null,
         follow_up_date: editForm.status === 'pending' ? (editForm.follow_up_date || null) : null,
+        broker: editForm.status === 'with_broker' ? (editForm.broker || null) : null,
       });
       if (updated) {
         setEditingTicket(prev => ({ ...prev, ...updated }));
@@ -248,6 +250,11 @@ export default function TicketsPage() {
                         {ticket.category && (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-[#f3f4f8]" style={{ color: '#566079' }}>{ticket.category}</span>
                         )}
+                        {ticket.status === 'with_broker' && ticket.broker && (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: '#ecfeff', color: '#0891b2' }}>
+                            Broker: {ticket.broker}
+                          </span>
+                        )}
                       </div>
                       <p className="font-semibold text-sm" style={{ color: '#011745' }}>{ticket.title}</p>
                       {ticket.description && (
@@ -345,6 +352,16 @@ export default function TicketsPage() {
                     onChange={e => setEditForm(p => ({ ...p, follow_up_date: e.target.value }))}
                     className="w-full border border-[#e8eaf2] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488]" />
                   <p className="text-[11px] mt-1" style={{ color: '#a4abbe' }}>Wanneer dit pending ticket opnieuw opgepakt moet worden.</p>
+                </div>
+              )}
+              {editForm.status === 'with_broker' && (
+                <div>
+                  <label className="text-xs font-semibold mb-1 block" style={{ color: '#0891b2' }}>Broker</label>
+                  <input type="text" value={editForm.broker || ''}
+                    onChange={e => setEditForm(p => ({ ...p, broker: e.target.value }))}
+                    placeholder="Naam van de broker"
+                    className="w-full border border-[#e8eaf2] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0891b2]" />
+                  <p className="text-[11px] mt-1" style={{ color: '#a4abbe' }}>Bij welke broker ligt dit ticket momenteel.</p>
                 </div>
               )}
               {isAdmin && allUsers.length > 0 && (

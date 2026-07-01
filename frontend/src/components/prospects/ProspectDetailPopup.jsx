@@ -65,6 +65,11 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
   const [meetingType, setMeetingType] = useState('physical'); // physical | video
   const [mapQuery, setMapQuery] = useState('');
 
+  // Confirmation popup for calendar invites that will actually send e-mail.
+  // Holds { kind, payload, recipients: [emails], inviteText } or null.
+  const [inviteConfirm, setInviteConfirm] = useState(null);
+  const [inviteSending, setInviteSending] = useState(false);
+
   // Communications state
   const [communications, setCommunications] = useState([]);
   const [newComm, setNewComm] = useState('');
@@ -468,9 +473,49 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
     }
   };
 
+  /* ─── Helper: resolve internal attendee name for the invite text ─── */
+  const attendeeName = (id) => {
+    const tm = teamMembers.find((t) => String(t.id) === String(id));
+    return tm ? tm.full_name : null;
+  };
+
+  const teamMemberEmail = (id) => {
+    const tm = teamMembers.find((t) => String(t.id) === String(id));
+    return tm ? tm.email : null;
+  };
+
   /* ─── Save Callback ─── */
+  // If there are invitees (external e-mail and/or internal attendee) we FIRST
+  // show a confirmation popup — only after "Verzend uitnodiging" is an e-mail sent.
   const handleSaveCallback = async () => {
     if (!callbackDate) return;
+    const externEmail = (callbackExternEmail || '').trim();
+    const internIds = callbackAttendee ? [parseInt(callbackAttendee)] : [];
+    const hasInvitees = !!externEmail || internIds.length > 0;
+
+    if (hasInvitees) {
+      const recipients = [];
+      if (externEmail) recipients.push(externEmail);
+      internIds.forEach((id) => { const e = teamMemberEmail(id); if (e) recipients.push(e); });
+      const _company = prospect._raw?.company_name || prospect.company || prospect.companyName || 'ons';
+      const defaultText = `Beste,\n\nBij deze een uitnodiging voor een telefonisch gesprek met ${_company} op ${new Date(callbackDate).toLocaleString('nl-NL')}.\n\n${callbackNote || ''}\n\nMet vriendelijke groet`;
+      setInviteConfirm({
+        kind: 'call',
+        recipients,
+        inviteText: defaultText,
+        payload: {
+          lead_id: parseInt(leadId),
+          scheduled_at: new Date(callbackDate).toISOString(),
+          callback_type: 'call',
+          internal_attendees: internIds,
+          invited_user_ids: internIds,
+          external_attendees: externEmail ? [externEmail] : [],
+        },
+      });
+      return;
+    }
+
+    // No invitees: just save, no e-mail.
     setCallbackSaving(true);
     setCallbackMsg(null);
     try {
@@ -484,7 +529,7 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
           lead_id: parseInt(leadId),
           scheduled_at: new Date(callbackDate).toISOString(),
           callback_type: 'call',
-          internal_attendees: callbackAttendee ? [parseInt(callbackAttendee)] : [],
+          internal_attendees: internIds,
           internal_note: callbackNote || '',
           add_to_calendar: false,
         }),
@@ -494,6 +539,7 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
         setCallbackDate('');
         setCallbackNote('');
         setCallbackAttendee('');
+        setCallbackExternEmail('');
       } else {
         const err = await res.json().catch(() => ({}));
         setCallbackMsg({ type: 'error', text: err.detail || 'Fout bij opslaan' });
@@ -508,6 +554,33 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
   /* ─── Save Meeting ─── */
   const handleSaveMeeting = async () => {
     if (!meetingDate) return;
+    const externEmail = (meetingExternEmail || '').trim();
+    const internIds = callbackAttendee ? [parseInt(callbackAttendee)] : [];
+    const hasInvitees = !!externEmail || internIds.length > 0;
+
+    if (hasInvitees) {
+      const recipients = [];
+      if (externEmail) recipients.push(externEmail);
+      internIds.forEach((id) => { const e = teamMemberEmail(id); if (e) recipients.push(e); });
+      const defaultText = `Beste,\n\nBij deze een uitnodiging voor een meeting met ${prospect.companyName || prospect.company_name || 'ons'} op ${new Date(meetingDate).toLocaleString('nl-NL')}.\n${meetingLocation ? `\nLocatie/link: ${meetingLocation}` : ''}\n\n${meetingNote || ''}\n\nMet vriendelijke groet`;
+      setInviteConfirm({
+        kind: 'meeting',
+        recipients,
+        inviteText: defaultText,
+        payload: {
+          lead_id: parseInt(leadId),
+          scheduled_at: new Date(meetingDate).toISOString(),
+          callback_type: 'meeting',
+          external_note: meetingLocation || '',
+          internal_attendees: internIds,
+          invited_user_ids: internIds,
+          external_attendees: externEmail ? [externEmail] : [],
+        },
+      });
+      return;
+    }
+
+    // No invitees: just save, no e-mail.
     setMeetingSaving(true);
     setMeetingMsg(null);
     try {
@@ -539,6 +612,44 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
       setMeetingMsg({ type: 'error', text: 'Netwerk fout' });
     } finally {
       setMeetingSaving(false);
+    }
+  };
+
+  /* ─── Confirmed send: this ACTUALLY sends the e-mail invite ─── */
+  const confirmSendInvite = async () => {
+    if (!inviteConfirm) return;
+    setInviteSending(true);
+    try {
+      const res = await fetch(`${API}/callbacks/`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...inviteConfirm.payload,
+          add_to_calendar: true,
+          internal_note: inviteConfirm.inviteText || '',
+        }),
+      });
+      const setMsg = inviteConfirm.kind === 'meeting' ? setMeetingMsg : setCallbackMsg;
+      if (res.ok) {
+        setMsg({ type: 'success', text: 'Uitnodiging verzonden!' });
+        if (inviteConfirm.kind === 'meeting') {
+          setMeetingDate(''); setMeetingLocation(''); setMeetingNote(''); setMeetingExternEmail('');
+        } else {
+          setCallbackDate(''); setCallbackNote(''); setCallbackAttendee(''); setCallbackExternEmail('');
+        }
+        setInviteConfirm(null);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setMsg({ type: 'error', text: err.detail || 'Fout bij verzenden' });
+      }
+    } catch (e) {
+      const setMsg = inviteConfirm.kind === 'meeting' ? setMeetingMsg : setCallbackMsg;
+      setMsg({ type: 'error', text: 'Netwerk fout' });
+    } finally {
+      setInviteSending(false);
     }
   };
 
@@ -2231,6 +2342,69 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
           </div>
         </div>
       </div>
+
+      {/* ─── Bevestigingspopup vóór het versturen van een calendar-uitnodiging (verstuurt ECHTE e-mail) ─── */}
+      {inviteConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => !inviteSending && setInviteConfirm(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="px-6 py-4 flex items-center gap-3" style={{ backgroundColor: '#7a1f1f' }}>
+              <Mail size={20} style={{ color: '#fff' }} />
+              <div>
+                <h3 className="text-base font-bold text-white">Waarschuwing — e-mail versturen</h3>
+                <p className="text-xs" style={{ color: '#f3c9c9' }}>
+                  Deze actie verstuurt een echte uitnodiging via Google Calendar
+                </p>
+              </div>
+            </div>
+            <div className="p-6 space-y-4 overflow-auto">
+              <div>
+                <label className="block text-xs font-semibold uppercase mb-1.5" style={{ color: '#7b859e' }}>Ontvangers</label>
+                <div className="flex flex-wrap gap-2">
+                  {(inviteConfirm.recipients || []).length === 0 ? (
+                    <span className="text-sm" style={{ color: '#566079' }}>(interne genodigden)</span>
+                  ) : (
+                    inviteConfirm.recipients.map((r, i) => (
+                      <span key={i} className="text-xs px-2.5 py-1 rounded-lg font-medium"
+                        style={{ backgroundColor: '#eef2fa', color: '#3d61a4' }}>
+                        {r}
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase mb-1.5" style={{ color: '#7b859e' }}>Uitnodigingstekst (aanpasbaar)</label>
+                <textarea
+                  value={inviteConfirm.inviteText}
+                  onChange={(e) => setInviteConfirm((c) => ({ ...c, inviteText: e.target.value }))}
+                  rows={8}
+                  className="w-full px-3 py-2.5 bg-[#f7f8fc] border border-[#e8eaf2] rounded-lg text-sm focus:border-[#3d61a4] focus:outline-none resize-none"
+                  style={{ color: '#011745' }}
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-[#e8eaf2] flex justify-end gap-3">
+              <button
+                onClick={() => setInviteConfirm(null)}
+                disabled={inviteSending}
+                className="px-4 py-2 text-[#566079] hover:bg-[#f7f8fc] rounded-lg font-medium text-sm transition-colors border border-[#e8eaf2] disabled:opacity-60"
+              >
+                Annuleren
+              </button>
+              <button
+                onClick={confirmSendInvite}
+                disabled={inviteSending}
+                className="px-5 py-2 text-white rounded-lg font-semibold text-sm transition-colors flex items-center gap-2 disabled:opacity-60"
+                style={{ backgroundColor: '#7a1f1f' }}
+              >
+                {inviteSending ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
+                Verzend uitnodiging
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

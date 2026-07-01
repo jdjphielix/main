@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Plus, Loader2, AlertCircle, Shield, Clock, CheckCircle2, X, Save,
-  Mail, FileText, AlertTriangle, ChevronDown, Search
+  Mail, FileText, AlertTriangle, ChevronDown, Search, Trash2
 } from 'lucide-react';
 import { api, BROKERS, BrokerPicker, DropZone, token, STATUS_COLORS, PRIORITY_COLORS } from './adminHelpers';
 
@@ -175,6 +175,20 @@ function ComplianceTab() {
       // Update local selected case
       setSelectedCase(prev => ({ ...prev, ...caseEdit }));
     } catch (err) { alert('Fout: ' + err.message); }
+    finally { setSaving(false); }
+  }
+
+  async function deleteCase(c) {
+    // Uses the per-lead compliance DELETE endpoint (case + linked case-documents).
+    if (!c || !c.lead_id) { alert('Kan case niet verwijderen: lead onbekend'); return; }
+    if (!window.confirm('Weet je zeker dat je deze compliance case wilt verwijderen? Dit verwijdert ook de gekoppelde documentkoppelingen.')) return;
+    setSaving(true);
+    try {
+      await api(`/api/v1/leads/${c.lead_id}/compliance/${c.id}`, { method: 'DELETE' });
+      setSelectedCase(null);
+      setCaseEdit(null);
+      fetchCompliance();
+    } catch (err) { alert('Verwijderen mislukt: ' + err.message); }
     finally { setSaving(false); }
   }
 
@@ -551,18 +565,24 @@ function ComplianceTab() {
                 </div>
 
                 {/* Footer — details tab */}
-                <div className="px-6 py-4 border-t border-[#e8eaf2] flex items-center justify-end gap-3"
+                <div className="px-6 py-4 border-t border-[#e8eaf2] flex items-center justify-between gap-3"
                   style={{ backgroundColor: '#f7f8fc' }}>
-                  <button onClick={() => setSelectedCase(null)}
-                    className="px-4 py-2 rounded-lg text-sm font-medium" style={{ color: '#7b859e' }}>
-                    Annuleer
+                  <button onClick={() => deleteCase(selectedCase)} disabled={saving}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50">
+                    <Trash2 size={14} /> Verwijderen
                   </button>
-                  <button onClick={saveCase} disabled={saving}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50"
-                    style={{ backgroundColor: '#3d61a4' }}>
-                    {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                    Opslaan
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => setSelectedCase(null)}
+                      className="px-4 py-2 rounded-lg text-sm font-medium" style={{ color: '#7b859e' }}>
+                      Annuleer
+                    </button>
+                    <button onClick={saveCase} disabled={saving}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50"
+                      style={{ backgroundColor: '#3d61a4' }}>
+                      {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                      Opslaan
+                    </button>
+                  </div>
                 </div>
               </>
             )}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, ChevronLeft, ChevronRight, Calendar, Clock, Building2, User, Loader2, AlertCircle } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Calendar, Clock, Building2, User, Loader2, AlertCircle, Pencil, Trash2, Check } from 'lucide-react';
 
 const MONTHS_NL = [
   'Januari', 'Februari', 'Maart', 'April', 'Mei', 'Juni',
@@ -17,6 +17,11 @@ export default function CallbackAgendaPopup({ isOpen, onClose, onOpenLead }) {
   const [callbacks, setCallbacks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // Inline edit state
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({ date: '', time: '', note: '', type: 'call' });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState(null);
 
   const fetchCallbacks = useCallback(async () => {
     setLoading(true);
@@ -39,8 +44,79 @@ export default function CallbackAgendaPopup({ isOpen, onClose, onOpenLead }) {
     if (isOpen) {
       fetchCallbacks();
       setSelectedDay(null);
+      setEditingId(null);
     }
   }, [isOpen, fetchCallbacks]);
+
+  // Start editing a callback: prefill the form from its current values
+  const startEdit = (e, cb) => {
+    if (e) e.stopPropagation();
+    setEditError(null);
+    const d = cb.scheduled_at ? new Date(cb.scheduled_at) : new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    setEditForm({
+      date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+      time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+      note: cb.internal_note || '',
+      type: cb.callback_type || 'call',
+    });
+    setEditingId(cb.id);
+  };
+
+  const cancelEdit = (e) => {
+    if (e) e.stopPropagation();
+    setEditingId(null);
+    setEditError(null);
+  };
+
+  const saveEdit = async (e, cb) => {
+    if (e) e.stopPropagation();
+    if (!editForm.date || !editForm.time) {
+      setEditError('Datum en tijd zijn verplicht');
+      return;
+    }
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      // Build a local datetime; backend accepts ISO and assumes UTC if no tz.
+      const scheduled = new Date(`${editForm.date}T${editForm.time}:00`);
+      const res = await fetch(`/api/v1/callbacks/${cb.id}`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${getToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          scheduled_at: scheduled.toISOString(),
+          callback_type: editForm.type,
+          internal_note: editForm.note,
+        }),
+      });
+      if (!res.ok) throw new Error('Opslaan mislukt');
+      setEditingId(null);
+      await fetchCallbacks();
+    } catch (err) {
+      setEditError(err.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const deleteCallback = async (e, cb) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm('Weet je zeker dat je deze callback wilt verwijderen?')) return;
+    try {
+      const res = await fetch(`/api/v1/callbacks/${cb.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok) throw new Error('Verwijderen mislukt');
+      if (editingId === cb.id) setEditingId(null);
+      await fetchCallbacks();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -330,7 +406,7 @@ export default function CallbackAgendaPopup({ isOpen, onClose, onOpenLead }) {
                                       </span>
                                     </div>
                                   )}
-                                  {cb.internal_note && (
+                                  {cb.internal_note && editingId !== cb.id && (
                                     <p className="text-xs mt-2 px-2 py-1.5 rounded-lg line-clamp-2"
                                       style={{ backgroundColor: '#f4f6fb', color: '#566079' }}>
                                       {cb.internal_note}
@@ -342,7 +418,91 @@ export default function CallbackAgendaPopup({ isOpen, onClose, onOpenLead }) {
                                     </p>
                                   )}
                                 </div>
+
+                                {/* Action buttons (edit/delete) — stopPropagation so card-click still opens lead */}
+                                <div className="flex-shrink-0 flex items-start gap-1">
+                                  <button
+                                    onClick={(e) => startEdit(e, cb)}
+                                    title="Bewerken"
+                                    className="p-1.5 rounded-lg transition-colors hover:bg-[#eef2fa]"
+                                    style={{ color: '#3d61a4' }}
+                                  >
+                                    <Pencil size={14} />
+                                  </button>
+                                  <button
+                                    onClick={(e) => deleteCallback(e, cb)}
+                                    title="Verwijderen"
+                                    className="p-1.5 rounded-lg transition-colors hover:bg-[#fee2e2]"
+                                    style={{ color: '#df2f4a' }}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
                               </div>
+
+                              {/* Inline edit form */}
+                              {editingId === cb.id && (
+                                <div
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="mt-3 pt-3 border-t space-y-2"
+                                  style={{ borderColor: '#e8eaf2' }}
+                                >
+                                  <div className="flex gap-2">
+                                    <input
+                                      type="date"
+                                      value={editForm.date}
+                                      onChange={(e) => setEditForm(f => ({ ...f, date: e.target.value }))}
+                                      className="flex-1 text-xs px-2 py-1.5 rounded-lg border"
+                                      style={{ borderColor: '#cdd1e0', color: '#252f4a' }}
+                                    />
+                                    <input
+                                      type="time"
+                                      value={editForm.time}
+                                      onChange={(e) => setEditForm(f => ({ ...f, time: e.target.value }))}
+                                      className="w-24 text-xs px-2 py-1.5 rounded-lg border"
+                                      style={{ borderColor: '#cdd1e0', color: '#252f4a' }}
+                                    />
+                                  </div>
+                                  <select
+                                    value={editForm.type}
+                                    onChange={(e) => setEditForm(f => ({ ...f, type: e.target.value }))}
+                                    className="w-full text-xs px-2 py-1.5 rounded-lg border"
+                                    style={{ borderColor: '#cdd1e0', color: '#252f4a' }}
+                                  >
+                                    <option value="call">Telefoongesprek</option>
+                                    <option value="meeting">Meeting</option>
+                                  </select>
+                                  <textarea
+                                    value={editForm.note}
+                                    onChange={(e) => setEditForm(f => ({ ...f, note: e.target.value }))}
+                                    placeholder="Notitie..."
+                                    rows={2}
+                                    className="w-full text-xs px-2 py-1.5 rounded-lg border resize-none"
+                                    style={{ borderColor: '#cdd1e0', color: '#252f4a' }}
+                                  />
+                                  {editError && (
+                                    <p className="text-[11px]" style={{ color: '#df2f4a' }}>{editError}</p>
+                                  )}
+                                  <div className="flex justify-end gap-2">
+                                    <button
+                                      onClick={cancelEdit}
+                                      className="text-xs px-3 py-1.5 rounded-lg font-medium"
+                                      style={{ color: '#566079', backgroundColor: '#f3f4f8' }}
+                                    >
+                                      Annuleer
+                                    </button>
+                                    <button
+                                      onClick={(e) => saveEdit(e, cb)}
+                                      disabled={savingEdit}
+                                      className="text-xs px-3 py-1.5 rounded-lg font-semibold text-white flex items-center gap-1.5 disabled:opacity-60"
+                                      style={{ backgroundColor: '#3d61a4' }}
+                                    >
+                                      {savingEdit ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                                      Opslaan
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}

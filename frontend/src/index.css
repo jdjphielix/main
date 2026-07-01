@@ -141,6 +141,32 @@
 .dark .text-\[\#566079\] {
   color: #a4abbe !important;
 }
+/* Extra lichte "eilanden" (chips/badges/section-achtergronden) donker maken */
+.dark .bg-\[\#eef2fa\] {
+  background-color: #1f2c4d !important;
+}
+.dark .bg-\[\#f0fdf4\] {
+  background-color: #14241c !important;
+}
+.dark .bg-\[\#fef3c7\] {
+  background-color: #2a2410 !important;
+}
+.dark .bg-\[\#f4f6fb\] {
+  background-color: #161d33 !important;
+}
+.dark .bg-\[\#eff6ff\] {
+  background-color: #16233a !important;
+}
+/* Extra donkere teksttinten oplichten voor leesbaarheid op donker */
+.dark .text-\[\#7b859e\] {
+  color: #a4abbe !important;
+}
+.dark .text-\[\#252f4a\] {
+  color: #e8eaf2 !important;
+}
+.dark .text-\[\#3b4560\] {
+  color: #cdd1e0 !important;
+}
 /* Inline witte ACHTERGRONDEN (style={{ backgroundColor:'#fff'/'white' }}) donker maken.
    Alleen background-declaraties targeten (niet 'color'), en alleen puur wit,
    zodat gekleurde vlakken (oranje/rood) ongemoeid blijven. */

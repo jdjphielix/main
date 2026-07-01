@@ -1053,7 +1053,7 @@ export default function LeadDetailPopup({ lead, onClose, onUpdate }) {
                     <h4 className="text-sm font-semibold text-[#011745]">AI Lead Score</h4>
                     <p className="text-xs text-[#7b859e]">Score op basis van bedrijfsprofiel</p>
                   </div>
-                  <div className="text-4xl font-bold text-[#3d61a4]">{lead.score || '—'}</div>
+                  <div className="text-4xl font-bold text-[#3d61a4]">{lead.score ? `${Math.round(lead.score / 10)}/10` : '—'}</div>
                 </div>
               </div>
 
