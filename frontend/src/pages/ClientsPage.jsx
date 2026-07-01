@@ -10,6 +10,7 @@ import {
 
 import EmailThreadsPanel from '../components/leads/EmailThreadsPanel';
 import ContactFamilyPopup from '../components/leads/ContactFamilyPopup';
+import ProductLinesSection from '../components/common/ProductLinesSection';
 import { useAuth } from '../contexts/AuthContext';
 
 const token = () => sessionStorage.getItem('auth_token');
@@ -2711,6 +2712,9 @@ export default function ClientsPage({ myClientsOnly = false }) {
                           </div>
                         </div>
                       )}
+
+                      {/* Multi-product regels (volumes + revenue) */}
+                      <ProductLinesSection leadId={selectedClient.id} product="taperpay" accent="#3d61a4" />
                     </div>
                   )}
 
@@ -2807,6 +2811,9 @@ export default function ClientsPage({ myClientsOnly = false }) {
                           <p className="text-xs mt-1 mb-4" style={{ color: '#a4abbe' }}>Klik op "Bewerken" om TaperTrade te activeren voor deze klant</p>
                         </div>
                       )}
+
+                      {/* Multi-product regels (volumes + revenue) */}
+                      <ProductLinesSection leadId={selectedClient.id} product="tapertrade" accent="#16a34a" />
                     </div>
                   )}
 

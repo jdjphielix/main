@@ -3,6 +3,7 @@ import { X, Plus, Calendar, Users, FileText, MessageSquare, Clock, Check, Loader
 import CurrencySelector from './CurrencySelector';
 import RevenueCard from './RevenueCard';
 import DocumentUpload from '../common/DocumentUpload';
+import ProductLinesSection from '../common/ProductLinesSection';
 import { useAuth } from '../../contexts/AuthContext';
 
 const API = '/api/v1';
@@ -1393,6 +1394,9 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
                   className="w-full px-3 py-2 bg-[#f7f8fc] border border-[#e8eaf2] rounded-lg text-sm focus:border-[#3d61a4] focus:outline-none h-24"
                 />
               </div>
+
+              {/* Multi-product regels (volumes + revenue) */}
+              <ProductLinesSection leadId={leadId} product="taperpay" accent="#3d61a4" />
             </div>
           )}
 
@@ -1570,6 +1574,9 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
                   </label>
                 </div>
               </div>
+
+              {/* Multi-product regels (volumes + revenue) */}
+              <ProductLinesSection leadId={leadId} product="tapertrade" accent="#16a34a" />
             </div>
           )}
 

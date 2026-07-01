@@ -13,11 +13,11 @@ from email.utils import parsedate_to_datetime
 from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models.user import User
-from app.models.lead import Lead, LeadStatus, PipelineStage, CustomList, CustomListLead, ProspectData, ClientForecasting, ClientDeal, ComplianceCase, ComplianceCaseDocument
+from app.models.lead import Lead, LeadStatus, PipelineStage, CustomList, CustomListLead, ProspectData, ClientForecasting, ClientDeal, ComplianceCase, ComplianceCaseDocument, ProductLine
 from app.models.user import PinnedLead
-from app.models.communication import Note, Communication, Document, EmailSync
+from app.models.communication import Note, Communication, Document, EmailSync, ContactMethod
 from app.models.communication import CallLog
-from app.models.notification import ActivityLog
+from app.models.notification import ActivityLog, Notification
 from app.schemas.leads import (
     LeadCreate, LeadUpdate, LeadResponse, LeadListResponse,
     DailyListUpdate, LeadScoreUpdate, SnoozeRequest, BulkActionRequest,
@@ -304,6 +304,36 @@ async def create_lead(
         entity_type="lead",
         entity_id=lead.id,
     ))
+    db.commit()
+
+    # Auto-create ContactMethod rows from the contact fields (skips empty values).
+    _contact_label = (lead.contact_name or "").strip() or "Werk"
+    _has_primary_phone = False
+    if (lead.contact_email or "").strip():
+        db.add(ContactMethod(
+            lead_id=lead.id,
+            type="email",
+            value=lead.contact_email.strip(),
+            label=_contact_label,
+            is_primary=True,
+        ))
+    if (lead.contact_mobile or "").strip():
+        db.add(ContactMethod(
+            lead_id=lead.id,
+            type="phone",
+            value=lead.contact_mobile.strip(),
+            label="Mobiel",
+            is_primary=True,  # first phone becomes primary
+        ))
+        _has_primary_phone = True
+    if (lead.contact_phone or "").strip() and (lead.contact_phone or "").strip() != (lead.contact_mobile or "").strip():
+        db.add(ContactMethod(
+            lead_id=lead.id,
+            type="phone",
+            value=lead.contact_phone.strip(),
+            label="Werk",
+            is_primary=not _has_primary_phone,
+        ))
     db.commit()
 
     return lead
@@ -634,6 +664,18 @@ async def send_back_to_onboarding_sales(
     lead.revision_note = note_text
     lead.revision_date = datetime.now(timezone.utc)
     lead.revision_by_id = current_user.id
+
+    # Notify the sales owner (fallback to assigned user) that the dossier came back
+    _notify_user_id = lead.sales_owner_id or lead.assigned_user_id
+    if _notify_user_id:
+        db.add(Notification(
+            user_id=_notify_user_id,
+            title="Dossier teruggestuurd door backoffice",
+            message=f"{lead.company_name}: {note_text}",
+            notification_type="status_change",
+            entity_type="lead",
+            entity_id=lead.id,
+        ))
 
     # Create a visible note so sales can see it
     note = Note(
@@ -1711,3 +1753,110 @@ async def assign_account_manager(
     db.commit()
     db.refresh(lead)
     return {"status": "ok", "account_manager_id": lead.account_manager_id}
+
+
+# ── Product Lines (multi-row volumes/revenue per lead) ───────────────
+
+def _product_line_dict(pl: ProductLine):
+    vol = pl.volume or 0
+    margin = pl.margin_pct or 0
+    return {
+        "id": pl.id,
+        "lead_id": pl.lead_id,
+        "product": pl.product,
+        "name": pl.name,
+        "volume": vol,
+        "margin_pct": margin,
+        "note": pl.note,
+        "revenue": vol * margin / 100,
+        "created_at": pl.created_at.isoformat() if pl.created_at else None,
+    }
+
+
+@router.get("/{lead_id}/product-lines")
+async def get_product_lines(
+    lead_id: int,
+    product: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List product lines for a lead, optionally filtered by product."""
+    query = db.query(ProductLine).filter(ProductLine.lead_id == lead_id)
+    if product:
+        query = query.filter(ProductLine.product == product)
+    lines = query.order_by(ProductLine.created_at.asc()).all()
+    return [_product_line_dict(pl) for pl in lines]
+
+
+@router.post("/{lead_id}/product-lines")
+async def create_product_line(
+    lead_id: int,
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create a product line for a lead."""
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.is_deleted == False).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    pl = ProductLine(
+        lead_id=lead_id,
+        product=data.get("product"),
+        name=data.get("name", ""),
+        volume=float(data.get("volume") or 0),
+        margin_pct=float(data.get("margin_pct") or 0),
+        note=data.get("note"),
+    )
+    db.add(pl)
+    db.commit()
+    db.refresh(pl)
+    return _product_line_dict(pl)
+
+
+@router.put("/{lead_id}/product-lines/{line_id}")
+async def update_product_line(
+    lead_id: int,
+    line_id: int,
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update a product line."""
+    pl = db.query(ProductLine).filter(
+        ProductLine.id == line_id,
+        ProductLine.lead_id == lead_id,
+    ).first()
+    if not pl:
+        raise HTTPException(status_code=404, detail="Product line not found")
+    if "name" in data:
+        pl.name = data["name"]
+    if "volume" in data:
+        pl.volume = float(data.get("volume") or 0)
+    if "margin_pct" in data:
+        pl.margin_pct = float(data.get("margin_pct") or 0)
+    if "note" in data:
+        pl.note = data["note"]
+    if "product" in data and data["product"]:
+        pl.product = data["product"]
+    db.commit()
+    db.refresh(pl)
+    return _product_line_dict(pl)
+
+
+@router.delete("/{lead_id}/product-lines/{line_id}")
+async def delete_product_line(
+    lead_id: int,
+    line_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a product line."""
+    pl = db.query(ProductLine).filter(
+        ProductLine.id == line_id,
+        ProductLine.lead_id == lead_id,
+    ).first()
+    if not pl:
+        raise HTTPException(status_code=404, detail="Product line not found")
+    db.delete(pl)
+    db.commit()
+    return {"status": "deleted", "id": line_id}

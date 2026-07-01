@@ -11,9 +11,10 @@ class Ticket(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(255), nullable=False)
     description = Column(Text)
-    status = Column(String(50), default="open")  # open, in_progress, resolved, closed
+    status = Column(String(50), default="open")  # open, in_progress, pending, resolved, closed
     priority = Column(String(20), default="normal")  # low, normal, high, urgent
     category = Column(String(100))  # onboarding, client, fx, trade, compliance, other
+    follow_up_date = Column(DateTime(timezone=True))  # opvolgdatum voor pending tickets
 
     # Relations
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)

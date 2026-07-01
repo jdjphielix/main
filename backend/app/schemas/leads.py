@@ -115,6 +115,9 @@ class LeadResponse(BaseModel):
     churn_reason: Optional[str] = None
     churn_date: Optional[datetime] = None
     churn_to_competitor: Optional[str] = None
+    revision_status: Optional[str] = None
+    revision_note: Optional[str] = None
+    revision_date: Optional[datetime] = None
     revenue_potential: Optional[list] = None
     contact_person: Optional[str] = None
     created_at: Optional[datetime] = None

@@ -7,6 +7,7 @@ from app.models.ticket import Ticket
 from app.models.user import User
 from app.routers.auth import get_current_user
 from typing import Optional
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/api/v1/tickets", tags=["tickets"])
 
@@ -24,10 +25,26 @@ def _serialize_ticket(t: Ticket, created_by_name=None, assigned_to_name=None):
         "assigned_to_id": t.assigned_to_id,
         "assigned_to_name": assigned_to_name,
         "related_lead_id": t.related_lead_id,
+        "follow_up_date": t.follow_up_date.isoformat() if t.follow_up_date else None,
         "created_at": t.created_at.isoformat() if t.created_at else None,
         "updated_at": t.updated_at.isoformat() if t.updated_at else None,
         "resolved_at": t.resolved_at.isoformat() if t.resolved_at else None,
     }
+
+
+def _parse_iso_dt(raw):
+    """Safely parse an ISO date/datetime string into a datetime; returns None on failure."""
+    if not raw:
+        return None
+    if isinstance(raw, datetime):
+        return raw
+    try:
+        s = str(raw).strip()
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        return datetime.fromisoformat(s)
+    except (ValueError, TypeError):
+        return None
 
 
 @router.get("/")
@@ -81,7 +98,8 @@ async def create_ticket(
         related_lead_id=data.get("related_lead_id"),
         created_by_id=current_user.id,
         assigned_to_id=data.get("assigned_to_id"),
-        status="open",
+        status=data.get("status", "open"),
+        follow_up_date=_parse_iso_dt(data.get("follow_up_date")),
     )
     db.add(ticket)
     db.commit()
@@ -106,8 +124,9 @@ async def update_ticket(
     for key in ["title", "description", "status", "priority", "category", "assigned_to_id", "related_lead_id"]:
         if key in data:
             setattr(ticket, key, data[key])
+    if "follow_up_date" in data:
+        ticket.follow_up_date = _parse_iso_dt(data.get("follow_up_date"))
     if data.get("status") in ("resolved", "closed"):
-        from datetime import datetime, timezone
         ticket.resolved_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(ticket)

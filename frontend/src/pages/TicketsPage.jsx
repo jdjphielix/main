@@ -11,6 +11,7 @@ const api = (url, opts = {}) => fetch(url, {
 const STATUSES = {
   open:        { label: 'Open',           color: '#3d61a4', bg: '#eef2fa',  icon: Clock },
   in_progress: { label: 'In behandeling', color: '#d97706', bg: '#fffbeb',  icon: AlertCircle },
+  pending:     { label: 'Pending',        color: '#0d9488', bg: '#f0fdfa',  icon: Clock },
   waiting:     { label: 'Wachten',        color: '#7c3aed', bg: '#f5f3ff',  icon: Clock },
   with_broker: { label: 'Met broker',     color: '#0891b2', bg: '#ecfeff',  icon: AlertCircle },
   resolved:    { label: 'Opgelost',       color: '#16a34a', bg: '#f0fdf4',  icon: CheckCircle },
@@ -99,6 +100,7 @@ export default function TicketsPage() {
       priority: ticket.priority || 'normal',
       category: ticket.category || 'other',
       assigned_to_id: ticket.assigned_to_id || '',
+      follow_up_date: ticket.follow_up_date ? ticket.follow_up_date.slice(0, 10) : '',
     });
   };
 
@@ -108,6 +110,7 @@ export default function TicketsPage() {
       const updated = await updateTicket(editingTicket.id, {
         ...editForm,
         assigned_to_id: editForm.assigned_to_id || null,
+        follow_up_date: editForm.status === 'pending' ? (editForm.follow_up_date || null) : null,
       });
       if (updated) {
         setEditingTicket(prev => ({ ...prev, ...updated }));
@@ -121,6 +124,15 @@ export default function TicketsPage() {
     acc[s] = tickets.filter(t => t.status === s).length;
     return acc;
   }, {});
+
+  // Pending tickets sorted by opvolgdatum (tickets zonder datum onderaan)
+  const pendingTickets = tickets
+    .filter(t => t.status === 'pending')
+    .sort((a, b) => {
+      const da = a.follow_up_date || '9999-12-31';
+      const db_ = b.follow_up_date || '9999-12-31';
+      return da < db_ ? -1 : da > db_ ? 1 : 0;
+    });
 
   return (
     <div className="flex flex-col h-full bg-[#f7f8fc] p-6 gap-5">
@@ -174,6 +186,35 @@ export default function TicketsPage() {
           </button>
         )}
       </div>
+
+      {/* Pending — sorteert op opvolgdatum */}
+      {!filterStatus && pendingTickets.length > 0 && (
+        <div className="rounded-xl border border-[#ccdedd] p-4" style={{ backgroundColor: '#f0fdfa' }}>
+          <div className="flex items-center gap-2 mb-3">
+            <Clock size={14} style={{ color: '#0d9488' }} />
+            <h3 className="text-sm font-bold" style={{ color: '#0d9488' }}>Pending — opvolgen</h3>
+            <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: '#0d9488', color: 'white' }}>{pendingTickets.length}</span>
+          </div>
+          <div className="space-y-1.5">
+            {pendingTickets.map(t => {
+              const canEdit = isAdmin || t.created_by_id === user?.id;
+              const overdue = t.follow_up_date && t.follow_up_date.slice(0, 10) < new Date().toISOString().slice(0, 10);
+              return (
+                <div key={t.id}
+                  className={`flex items-center gap-3 bg-white rounded-lg border px-3 py-2 ${canEdit ? 'cursor-pointer hover:border-[#0d9488]' : ''}`}
+                  style={{ borderColor: overdue ? '#dc2626' : '#d5e8e6' }}
+                  onClick={() => canEdit && openEdit(t)}>
+                  <span className="text-xs font-bold" style={{ color: '#a4abbe' }}>#{t.id}</span>
+                  <span className="flex-1 min-w-0 truncate text-sm font-medium" style={{ color: '#011745' }}>{t.title}</span>
+                  <span className="text-xs font-semibold whitespace-nowrap" style={{ color: overdue ? '#dc2626' : '#0d9488' }}>
+                    {t.follow_up_date ? new Date(t.follow_up_date).toLocaleDateString('nl-NL') : 'Geen datum'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Ticket list */}
       <div className="flex-1 overflow-auto">
@@ -297,6 +338,15 @@ export default function TicketsPage() {
                   {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
+              {editForm.status === 'pending' && (
+                <div>
+                  <label className="text-xs font-semibold mb-1 block" style={{ color: '#0d9488' }}>Opvolgdatum</label>
+                  <input type="date" value={editForm.follow_up_date || ''}
+                    onChange={e => setEditForm(p => ({ ...p, follow_up_date: e.target.value }))}
+                    className="w-full border border-[#e8eaf2] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488]" />
+                  <p className="text-[11px] mt-1" style={{ color: '#a4abbe' }}>Wanneer dit pending ticket opnieuw opgepakt moet worden.</p>
+                </div>
+              )}
               {isAdmin && allUsers.length > 0 && (
                 <div>
                   <label className="text-xs font-semibold mb-1 block" style={{ color: '#566079' }}>Toegewezen aan</label>

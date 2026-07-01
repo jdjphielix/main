@@ -338,6 +338,22 @@ class ClientDeal(Base):
     created_by = relationship("User", foreign_keys=[created_by_id])
 
 
+class ProductLine(Base):
+    """Multi-row product/volume lines per lead for TaperPay / TaperTrade."""
+    __tablename__ = "product_lines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False, index=True)
+    product = Column(String(20))              # 'taperpay' | 'tapertrade'
+    name = Column(String(255))
+    volume = Column(Float, default=0)
+    margin_pct = Column(Float, default=0)
+    note = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    lead = relationship("Lead")
+
+
 class ComplianceCase(Base):
     """Compliance case/ticket linked to a client."""
     __tablename__ = "compliance_cases"
