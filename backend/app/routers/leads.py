@@ -306,35 +306,9 @@ async def create_lead(
     ))
     db.commit()
 
-    # Auto-create ContactMethod rows from the contact fields (skips empty values).
-    _contact_label = (lead.contact_name or "").strip() or "Werk"
-    _has_primary_phone = False
-    if (lead.contact_email or "").strip():
-        db.add(ContactMethod(
-            lead_id=lead.id,
-            type="email",
-            value=lead.contact_email.strip(),
-            label=_contact_label,
-            is_primary=True,
-        ))
-    if (lead.contact_mobile or "").strip():
-        db.add(ContactMethod(
-            lead_id=lead.id,
-            type="phone",
-            value=lead.contact_mobile.strip(),
-            label="Mobiel",
-            is_primary=True,  # first phone becomes primary
-        ))
-        _has_primary_phone = True
-    if (lead.contact_phone or "").strip() and (lead.contact_phone or "").strip() != (lead.contact_mobile or "").strip():
-        db.add(ContactMethod(
-            lead_id=lead.id,
-            type="phone",
-            value=lead.contact_phone.strip(),
-            label="Werk",
-            is_primary=not _has_primary_phone,
-        ))
-    db.commit()
+    # NB: geen losse ContactMethod-rijen aanmaken uit de contactvelden — de
+    # "Primair contact"-kaart in de UI toont het ingevoerde contact al uit de
+    # platte velden. Aparte rijen zouden dubbele kaarten geven.
 
     return lead
 
