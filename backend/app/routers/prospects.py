@@ -45,6 +45,7 @@ def _serialize_prospect_data(pd):
         "strategy_notes": pd.strategy_notes,
         "tf_debtor_finance": pd.tf_debtor_finance,
         "tf_portfolio_finance": pd.tf_portfolio_finance,
+        "tf_voorraad_finance": getattr(pd, 'tf_voorraad_finance', None),
         "tf_total_financing_need": pd.tf_total_financing_need,
         "tf_additional_info": getattr(pd, 'tf_additional_info', None),
         "selected_broker": pd.selected_broker,

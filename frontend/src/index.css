@@ -141,3 +141,16 @@
 .dark .text-\[\#566079\] {
   color: #a4abbe !important;
 }
+/* Inline witte ACHTERGRONDEN (style={{ backgroundColor:'#fff'/'white' }}) donker maken.
+   Alleen background-declaraties targeten (niet 'color'), en alleen puur wit,
+   zodat gekleurde vlakken (oranje/rood) ongemoeid blijven. */
+.dark [style*="background-color: rgb(255, 255, 255)"],
+.dark [style*="background: rgb(255, 255, 255)"],
+.dark [style*="background-color: #fff"],
+.dark [style*="background:#fff"],
+.dark [style*="background-color:#fff"],
+.dark [style*="background: #fff"],
+.dark [style*="background-color: white"],
+.dark [style*="background: white"] {
+  background-color: #161d35 !important;
+}
