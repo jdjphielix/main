@@ -13,6 +13,7 @@ from app.middleware.auth import get_current_user, require_admin
 from app.models.user import User, UserRole, UserStatus, ScoringConfig
 from app.models.lead import Lead, PipelineStage, ClientForecasting
 from app.models.communication import CallLog
+from app.routers.leads import product_lines_revenue_bulk
 
 router = APIRouter()
 
@@ -468,19 +469,19 @@ async def get_sales_dashboard(
     )
     onboard_lead_to_uid = {r.lead_id: r.uid for r in onboard_owner_map if r.uid in user_ids}
 
-    # Bulk ProspectData for prospect + onboarding leads
+    # Bulk product-line revenue for prospect + onboarding leads
+    # (revenue = sum(volume * margin% / 100); replaces the deprecated fx/tf estimates)
     all_pd_lead_ids = list(set(list(prospect_lead_to_uid.keys()) + list(onboard_lead_to_uid.keys())))
     pipeline_rev: dict = {uid: 0.0 for uid in user_ids}
     onboarding_rev: dict = {uid: 0.0 for uid in user_ids}
     if all_pd_lead_ids:
-        pd_rows = db.query(ProspectData).filter(ProspectData.lead_id.in_(all_pd_lead_ids)).all()
-        for pd in pd_rows:
-            rev = (pd.fx_estimated_revenue or 0) + (pd.tf_estimated_revenue or 0)
-            if pd.lead_id in prospect_lead_to_uid:
-                uid = prospect_lead_to_uid[pd.lead_id]
+        pl_rev_map = product_lines_revenue_bulk(db, all_pd_lead_ids)
+        for lead_id, rev in pl_rev_map.items():
+            if lead_id in prospect_lead_to_uid:
+                uid = prospect_lead_to_uid[lead_id]
                 pipeline_rev[uid] = pipeline_rev.get(uid, 0) + rev
-            if pd.lead_id in onboard_lead_to_uid:
-                uid = onboard_lead_to_uid[pd.lead_id]
+            if lead_id in onboard_lead_to_uid:
+                uid = onboard_lead_to_uid[lead_id]
                 onboarding_rev[uid] = onboarding_rev.get(uid, 0) + rev
 
     # Client revenue via ClientForecasting
@@ -791,12 +792,12 @@ async def get_my_team(
     onboarding_rev: dict = {uid: 0.0 for uid in member_ids}
     all_pd_ids = list(set(list(p_map.keys()) + list(o_map.keys())))
     if all_pd_ids:
-        for pd in db.query(ProspectData).filter(ProspectData.lead_id.in_(all_pd_ids)).all():
-            rev = (pd.fx_estimated_revenue or 0) + (pd.tf_estimated_revenue or 0)
-            if pd.lead_id in p_map:
-                pipeline_rev[p_map[pd.lead_id]] = pipeline_rev.get(p_map[pd.lead_id], 0) + rev
-            if pd.lead_id in o_map:
-                onboarding_rev[o_map[pd.lead_id]] = onboarding_rev.get(o_map[pd.lead_id], 0) + rev
+        pl_rev_map = product_lines_revenue_bulk(db, all_pd_ids)
+        for lead_id, rev in pl_rev_map.items():
+            if lead_id in p_map:
+                pipeline_rev[p_map[lead_id]] = pipeline_rev.get(p_map[lead_id], 0) + rev
+            if lead_id in o_map:
+                onboarding_rev[o_map[lead_id]] = onboarding_rev.get(o_map[lead_id], 0) + rev
 
     client_rev: dict = {uid: 0.0 for uid in member_ids}
     if c_map:
@@ -943,12 +944,12 @@ async def get_team_revenue_forecast(
     onboarding_rev_fc: dict = {uid: 0.0 for uid in member_ids}
     all_pd_ids = list(set(list(p_map.keys()) + list(o_map.keys())))
     if all_pd_ids:
-        for pd in db.query(ProspectData).filter(ProspectData.lead_id.in_(all_pd_ids)).all():
-            rev = (pd.fx_estimated_revenue or 0) + (pd.tf_estimated_revenue or 0)
-            if pd.lead_id in p_map:
-                prospect_rev[p_map[pd.lead_id]] = prospect_rev.get(p_map[pd.lead_id], 0) + rev
-            if pd.lead_id in o_map:
-                onboarding_rev_fc[o_map[pd.lead_id]] = onboarding_rev_fc.get(o_map[pd.lead_id], 0) + rev
+        pl_rev_map = product_lines_revenue_bulk(db, all_pd_ids)
+        for lead_id, rev in pl_rev_map.items():
+            if lead_id in p_map:
+                prospect_rev[p_map[lead_id]] = prospect_rev.get(p_map[lead_id], 0) + rev
+            if lead_id in o_map:
+                onboarding_rev_fc[o_map[lead_id]] = onboarding_rev_fc.get(o_map[lead_id], 0) + rev
 
     client_rev_fc: dict = {uid: 0.0 for uid in member_ids}
     if c_map:

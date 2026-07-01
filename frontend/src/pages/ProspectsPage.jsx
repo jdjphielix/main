@@ -28,7 +28,9 @@ function mapApiProspect(api) {
     taperTradeActive: pd.tapertrade_active || false,
     fxVolume: pd.fx_estimated_volume || 0,
     tfVolume: pd.tf_estimated_volume || 0,
-    revenuePotential: (pd.fx_estimated_revenue || 0) + (pd.tf_estimated_revenue || 0),
+    revenuePotential: (pd.product_lines_revenue != null
+      ? pd.product_lines_revenue
+      : (pd.fx_estimated_revenue || 0) + (pd.tf_estimated_revenue || 0)),
     isHot: api.is_hot_prospect || false,
     onCallList: api.on_daily_list || false,
     salesOwnerId: api.sales_owner_id || null,

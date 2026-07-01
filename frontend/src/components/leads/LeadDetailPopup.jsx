@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import CallTimer from './CallTimer';
+import ProductLinesSection from '../common/ProductLinesSection';
 
 const statusColors = {
   New: '#3d61a4', Contacted: '#579bfc', Callback: '#ff5ac4',
@@ -136,31 +137,17 @@ export default function LeadDetailPopup({ lead, onClose, onUpdate }) {
   const [waFile, setWaFile] = useState(null);
   const [convUploading, setConvUploading] = useState(false);
 
-  // ─── Revenue Potentie state ───────────────────────
-  const [revRows, setRevRows] = useState(() => {
-    const saved = lead._raw?.revenue_potential || lead.revenue_potential;
-    return Array.isArray(saved) && saved.length > 0
-      ? saved
-      : [{ id: Date.now(), currency_pair: 'EUR/USD', volume: '', margin_pct: '0.5', custom_pair: '' }];
-  });
-  const revSaveTimer = useRef(null);
-
-  // ─── Trade Finance Revenue state ──────────────────
-  const [tfRows, setTfRows] = useState(() => {
-    const saved = lead._raw?.tf_revenue_potential || lead.tf_revenue_potential;
-    return Array.isArray(saved) && saved.length > 0
-      ? saved
-      : [{ id: Date.now(), product: 'Factoring', bedrag: '', percentage: '1.5' }];
-  });
-  const tfSaveTimer = useRef(null);
-  const [fxLocked, setFxLocked] = useState(() => !!(lead._raw?.revenue_potential_locked || lead.revenue_potential_locked));
-  const [tfLocked, setTfLocked] = useState(() => !!(lead._raw?.tf_revenue_potential_locked || lead.tf_revenue_potential_locked));
-
-  useEffect(() => {
-    return () => {
-      if (revSaveTimer.current) clearTimeout(revSaveTimer.current);
-    };
-  }, []);
+  // ─── Product activation state (forecasting lives in product lines) ──
+  // Activation can already happen in the lead phase and persists through the
+  // whole pipeline. Status is read from the joinedloaded prospect_data.
+  const [taperpayActive, setTaperpayActive] = useState(
+    () => !!lead._raw?.prospect_data?.taperpay_active
+  );
+  const [tapertradeActive, setTapertradeActive] = useState(
+    () => !!lead._raw?.prospect_data?.tapertrade_active
+  );
+  const [productSaving, setProductSaving] = useState(false);
+  const [productActivationLoaded, setProductActivationLoaded] = useState(false);
 
   const transcriptInputRef = useRef(null);
   const waInputRef = useRef(null);
@@ -189,51 +176,48 @@ export default function LeadDetailPopup({ lead, onClose, onUpdate }) {
     setEditingField(null);
   };
 
-  // Debounced auto-save for revenue potential rows
-  const saveRevRows = useCallback((rows) => {
-    if (revSaveTimer.current) clearTimeout(revSaveTimer.current);
-    revSaveTimer.current = setTimeout(async () => {
-      try {
-        await api(`/api/v1/leads/${leadId}`, {
-          method: 'PUT',
-          body: JSON.stringify({ revenue_potential: rows }),
-        });
-      } catch (err) {
-        showToast('Opslaan mislukt: ' + err.message, 'error');
-      }
-    }, 800);
-  }, [leadId]);
-
-  // Debounced auto-save for Trade Finance revenue rows
-  const saveTfRows = useCallback((rows) => {
-    if (tfSaveTimer.current) clearTimeout(tfSaveTimer.current);
-    tfSaveTimer.current = setTimeout(async () => {
-      try {
-        await api(`/api/v1/leads/${leadId}`, {
-          method: 'PUT',
-          body: JSON.stringify({ tf_revenue_potential: rows }),
-        });
-      } catch (err) {
-        showToast('Opslaan mislukt: ' + err.message, 'error');
-      }
-    }, 800);
-  }, [leadId]);
-
-  // Lock/save FX revenue section
-  const saveLockFx = async () => {
+  // Toggle a product on/off. Uses the prospects get-or-create prospect-data
+  // endpoint so activation also works while still in the lead phase.
+  const toggleProduct = async (product, next) => {
+    const field = product === 'taperpay' ? 'taperpay_active' : 'tapertrade_active';
+    // optimistic
+    if (product === 'taperpay') setTaperpayActive(next); else setTapertradeActive(next);
+    setProductSaving(true);
     try {
-      await api(`/api/v1/leads/${leadId}`, { method: 'PUT', body: JSON.stringify({ revenue_potential: revRows, revenue_potential_locked: true }) });
-      setFxLocked(true);
-      showToast('FX Revenue opgeslagen en vergrendeld');
-    } catch (err) { showToast('Opslaan mislukt: ' + err.message, 'error'); }
+      await api(`/api/v1/prospects/${leadId}/prospect-data`, {
+        method: 'PUT',
+        body: JSON.stringify({ [field]: next }),
+      });
+      showToast(next ? `${product === 'taperpay' ? 'TaperPay' : 'TaperTrade'} geactiveerd` : 'Gedeactiveerd');
+      if (onUpdate) onUpdate();
+    } catch (err) {
+      // revert on failure
+      if (product === 'taperpay') setTaperpayActive(!next); else setTapertradeActive(!next);
+      showToast('Opslaan mislukt: ' + err.message, 'error');
+    }
+    setProductSaving(false);
   };
-  const saveLockTf = async () => {
-    try {
-      await api(`/api/v1/leads/${leadId}`, { method: 'PUT', body: JSON.stringify({ tf_revenue_potential: tfRows, tf_revenue_potential_locked: true }) });
-      setTfLocked(true);
-      showToast('Trade Finance Revenue opgeslagen en vergrendeld');
-    } catch (err) { showToast('Opslaan mislukt: ' + err.message, 'error'); }
-  };
+
+  // Fetch current activation status on mount (the leads list response does not
+  // include prospect_data, so read it from the prospects detail endpoint which
+  // returns prospect_data for any lead/prospect id).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api(`/api/v1/prospects/${leadId}`);
+        if (cancelled) return;
+        const pd = data?.prospect_data;
+        if (pd) {
+          setTaperpayActive(!!pd.taperpay_active);
+          setTapertradeActive(!!pd.tapertrade_active);
+        }
+      } catch { /* no prospect_data yet — leave defaults */ }
+      if (!cancelled) setProductActivationLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadId]);
 
   // ─── Synced emails state ──────────────────────────
   const [syncedEmails, setSyncedEmails] = useState([]);
@@ -1202,237 +1186,53 @@ export default function LeadDetailPopup({ lead, onClose, onUpdate }) {
                 )}
               </div>
 
-              {/* ─── Revenue Potentie Widget ─── */}
-              {(() => {
-                const CURRENCY_PAIRS = [
-                  'EUR/USD', 'EUR/GBP', 'EUR/CHF', 'EUR/DKK', 'EUR/SEK', 'EUR/NOK',
-                  'EUR/PLN', 'USD/GBP', 'GBP/USD', 'USD/JPY', 'EUR/AED', 'EUR/CNY', 'Overig',
-                ];
+              {/* ─── Producten & Forecasting (product lines) ─── */}
+              <div>
+                <h3 className="text-xs font-semibold text-[#566079] mb-3 uppercase tracking-wider">Producten & Forecasting</h3>
+                <div className="flex items-center gap-3 mb-2">
+                  <button
+                    onClick={() => toggleProduct('taperpay', !taperpayActive)}
+                    disabled={productSaving}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-60 ${
+                      taperpayActive
+                        ? 'bg-[#3d61a4] text-white shadow-md'
+                        : 'bg-[#f7f8fc] text-[#7b859e] border border-[#e8eaf2] hover:border-[#3d61a4] hover:text-[#3d61a4]'
+                    }`}
+                  >
+                    {taperpayActive ? <CheckCircle size={16} /> : <Plus size={16} />}
+                    TaperPay
+                  </button>
+                  <button
+                    onClick={() => toggleProduct('tapertrade', !tapertradeActive)}
+                    disabled={productSaving}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-60 ${
+                      tapertradeActive
+                        ? 'bg-[#16a34a] text-white shadow-md'
+                        : 'bg-[#f7f8fc] text-[#7b859e] border border-[#e8eaf2] hover:border-[#16a34a] hover:text-[#16a34a]'
+                    }`}
+                  >
+                    {tapertradeActive ? <CheckCircle size={16} /> : <Plus size={16} />}
+                    TaperTrade
+                  </button>
+                </div>
 
-                const updateRow = (id, field, value) => {
-                  const updated = revRows.map(r => r.id === id ? { ...r, [field]: value } : r);
-                  setRevRows(updated);
-                  saveRevRows(updated);
-                };
-
-                const addRow = () => {
-                  const updated = [
-                    ...revRows,
-                    { id: Date.now(), currency_pair: 'EUR/USD', volume: '', margin_pct: '0.5', custom_pair: '' },
-                  ];
-                  setRevRows(updated);
-                  saveRevRows(updated);
-                };
-
-                const removeRow = (id) => {
-                  const updated = revRows.filter(r => r.id !== id);
-                  const final = updated.length > 0
-                    ? updated
-                    : [{ id: Date.now(), currency_pair: 'EUR/USD', volume: '', margin_pct: '0.5', custom_pair: '' }];
-                  setRevRows(final);
-                  saveRevRows(final);
-                };
-
-                const calcRevenue = (row) => {
-                  const v = parseFloat(row.volume) || 0;
-                  const m = parseFloat(row.margin_pct) || 0;
-                  return v * m / 100;
-                };
-
-                const totalRevenue = revRows.reduce((sum, r) => sum + calcRevenue(r), 0);
-
-                const fmtEur = (n) => new Intl.NumberFormat('nl-NL', {
-                  style: 'currency', currency: 'EUR', minimumFractionDigits: 0, maximumFractionDigits: 0,
-                }).format(n);
-
-                return (
-                  <div className="bg-[#f7f8fc] rounded-xl border border-[#e8eaf2] overflow-hidden">
-                    {/* Header */}
-                    <div className="px-5 py-3 bg-[#011745] flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-semibold text-white tracking-wide">Revenue Potentie FX</h3>
-                        {fxLocked && <span className="text-[10px] bg-amber-400/20 text-amber-300 px-2 py-0.5 rounded-full font-medium flex items-center gap-1"><Lock size={9}/> Vergrendeld</span>}
-                      </div>
-                      {fxLocked
-                        ? <button onClick={() => setFxLocked(false)} className="text-[11px] text-[#5a7fc2] hover:text-white transition-colors">Bewerken</button>
-                        : <button onClick={saveLockFx} className="text-[11px] bg-[#3d61a4] hover:bg-[#5a7fc2] text-white px-3 py-1 rounded-lg font-medium transition-colors">Opslaan</button>
-                      }
-                    </div>
-
-                    {/* Table */}
-                    <div className="p-4 space-y-2" style={{ opacity: fxLocked ? 0.7 : 1, pointerEvents: fxLocked ? 'none' : 'auto' }}>
-                      {/* Column headers */}
-                      <div
-                        className="grid gap-2 text-[10px] font-semibold text-[#a4abbe] uppercase tracking-wider px-1"
-                        style={{ gridTemplateColumns: '2fr 2fr 1.5fr 1.5fr 28px' }}
-                      >
-                        <span>Valutapaar</span>
-                        <span>Volume (€)</span>
-                        <span>Marge %</span>
-                        <span>Potentie</span>
-                        <span></span>
-                      </div>
-
-                      {revRows.map((row) => {
-                        const revenue = calcRevenue(row);
-                        return (
-                          <div
-                            key={row.id}
-                            className="grid gap-2 items-center"
-                            style={{ gridTemplateColumns: '2fr 2fr 1.5fr 1.5fr 28px' }}
-                          >
-                            {/* Currency pair */}
-                            <div>
-                              {row.currency_pair === 'Overig' ? (
-                                <div>
-                                  <input
-                                    type="text"
-                                    value={row.custom_pair || ''}
-                                    onChange={e => updateRow(row.id, 'custom_pair', e.target.value)}
-                                    placeholder="bijv. CHF/NOK"
-                                    className="w-full px-2 py-1.5 rounded-lg border border-[#cdd1e0] text-xs focus:outline-none focus:ring-2 focus:ring-[#3d61a4] bg-white"
-                                  />
-                                  <button
-                                    onClick={() => updateRow(row.id, 'currency_pair', 'EUR/USD')}
-                                    className="text-[10px] text-[#3d61a4] hover:underline mt-0.5 ml-1"
-                                  >
-                                    terug
-                                  </button>
-                                </div>
-                              ) : (
-                                <select
-                                  value={row.currency_pair}
-                                  onChange={e => updateRow(row.id, 'currency_pair', e.target.value)}
-                                  className="w-full px-2 py-1.5 rounded-lg border border-[#cdd1e0] text-xs focus:outline-none focus:ring-2 focus:ring-[#3d61a4] bg-white"
-                                >
-                                  {CURRENCY_PAIRS.map(p => (
-                                    <option key={p} value={p}>{p}</option>
-                                  ))}
-                                </select>
-                              )}
-                            </div>
-
-                            {/* Volume */}
-                            <input
-                              type="number"
-                              value={row.volume}
-                              onChange={e => updateRow(row.id, 'volume', e.target.value)}
-                              placeholder="0"
-                              min="0"
-                              className="w-full px-2 py-1.5 rounded-lg border border-[#cdd1e0] text-xs focus:outline-none focus:ring-2 focus:ring-[#3d61a4] bg-white"
-                            />
-
-                            {/* Margin % */}
-                            <div className="relative">
-                              <input
-                                type="number"
-                                value={row.margin_pct}
-                                onChange={e => updateRow(row.id, 'margin_pct', e.target.value)}
-                                placeholder="0.5"
-                                step="0.1"
-                                min="0"
-                                className="w-full pl-2 pr-5 py-1.5 rounded-lg border border-[#cdd1e0] text-xs focus:outline-none focus:ring-2 focus:ring-[#3d61a4] bg-white"
-                              />
-                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[#a4abbe]">%</span>
-                            </div>
-
-                            {/* Revenue (readonly) */}
-                            <div className="px-2 py-1.5 rounded-lg bg-[#eef2fa] border border-[#5a7fc2]/20 text-xs font-semibold text-[#3d61a4] text-right">
-                              {revenue > 0 ? fmtEur(revenue) : '—'}
-                            </div>
-
-                            {/* Delete */}
-                            <button
-                              onClick={() => removeRow(row.id)}
-                              className="flex items-center justify-center w-7 h-7 rounded-lg text-[#a4abbe] hover:text-[#ff642e] hover:bg-red-50 transition-colors"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        );
-                      })}
-
-                      {/* Add row */}
-                      <button
-                        onClick={addRow}
-                        className="flex items-center gap-1.5 text-xs font-medium text-[#3d61a4] hover:text-[#0a2d6b] mt-1 px-1"
-                      >
-                        <Plus size={13} /> Rij toevoegen
-                      </button>
-                    </div>
-
-                    {/* Total */}
-                    <div className="px-5 py-3 bg-[#eef2fa] border-t border-[#5a7fc2]/20 flex items-center justify-between">
-                      <span className="text-xs font-semibold text-[#566079] uppercase tracking-wider">Totale Revenue Potentie</span>
-                      <span className="text-lg font-bold text-[#011745]">
-                        {totalRevenue > 0 ? fmtEur(totalRevenue) : '—'}
-                      </span>
-                    </div>
+                {taperpayActive && (
+                  <div className="mt-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#3d61a4' }}>TaperPay</p>
+                    <ProductLinesSection leadId={leadId} product="taperpay" accent="#3d61a4" />
                   </div>
-                );
-              })()}
-
-              {/* ═══ TRADE FINANCE REVENUE POTENTIE ═══ */}
-              <div className="mt-4">
-              {(() => {
-                const TF_PRODUCTS = ['Factoring','Portfolio-gebaseerde lening','Structured Commodity Finance','Debtor Finance (Non-Recourse)','Overig'];
-                const updateTfRow = (id, field, value) => { const updated = tfRows.map(r => r.id === id ? { ...r, [field]: value } : r); setTfRows(updated); saveTfRows(updated); };
-                const addTfRow = () => { const updated = [...tfRows, { id: Date.now(), product: 'Factoring', bedrag: '', percentage: '1.5' }]; setTfRows(updated); saveTfRows(updated); };
-                const removeTfRow = (id) => { const updated = tfRows.filter(r => r.id !== id); const final = updated.length > 0 ? updated : [{ id: Date.now(), product: 'Factoring', bedrag: '', percentage: '1.5' }]; setTfRows(final); saveTfRows(final); };
-                const calcTf = (row) => (parseFloat(row.bedrag)||0) * (parseFloat(row.percentage)||0) / 100;
-                const totalTf = tfRows.reduce((sum, r) => sum + calcTf(r), 0);
-                const fmtE = (n) => new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
-                return (
-                  <div className="bg-[#f7f8fc] rounded-xl border border-[#e8eaf2] overflow-hidden">
-                    <div className="px-5 py-3 flex items-center justify-between" style={{ backgroundColor: '#14532d' }}>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-semibold text-white tracking-wide">Revenue Potentie Trade Finance</h3>
-                        {tfLocked && <span className="text-[10px] bg-green-400/20 text-green-300 px-2 py-0.5 rounded-full font-medium flex items-center gap-1"><Lock size={9}/> Vergrendeld</span>}
-                      </div>
-                      {tfLocked
-                        ? <button onClick={() => setTfLocked(false)} className="text-[11px] text-green-300 hover:text-white transition-colors">Bewerken</button>
-                        : <button onClick={saveLockTf} className="text-[11px] bg-green-700 hover:bg-green-600 text-white px-3 py-1 rounded-lg font-medium transition-colors">Opslaan</button>
-                      }
-                    </div>
-                    <div className="p-4 space-y-2" style={{ opacity: tfLocked ? 0.7 : 1, pointerEvents: tfLocked ? 'none' : 'auto' }}>
-                      <div className="grid gap-2 text-[10px] font-semibold text-[#a4abbe] uppercase tracking-wider px-1" style={{ gridTemplateColumns: '2.5fr 1.5fr 1.5fr 1.5fr 28px' }}>
-                        <span>Product</span><span>Financieringsbehoefte</span><span>Marge %</span><span>Potentie</span><span></span>
-                      </div>
-                      {tfRows.map((row) => {
-                        const rev = calcTf(row);
-                        return (
-                          <div key={row.id} className="grid gap-2 items-center" style={{ gridTemplateColumns: '2.5fr 1.5fr 1.5fr 1.5fr 28px' }}>
-                            <select value={row.product} onChange={e => updateTfRow(row.id, 'product', e.target.value)}
-                              className="w-full px-2 py-1.5 rounded-lg border border-[#cdd1e0] text-xs focus:outline-none bg-white">
-                              {TF_PRODUCTS.map(p => <option key={p} value={p}>{p}</option>)}
-                            </select>
-                            <input type="number" value={row.bedrag} onChange={e => updateTfRow(row.id, 'bedrag', e.target.value)} onBlur={() => saveTfRows(tfRows)}
-                              placeholder="0" min="0" className="w-full px-2 py-1.5 rounded-lg border border-[#cdd1e0] text-xs focus:outline-none bg-white" />
-                            <div className="relative">
-                              <input type="number" value={row.percentage} onChange={e => updateTfRow(row.id, 'percentage', e.target.value)} onBlur={() => saveTfRows(tfRows)}
-                                placeholder="1.5" step="0.1" min="0" className="w-full pl-2 pr-5 py-1.5 rounded-lg border border-[#cdd1e0] text-xs focus:outline-none bg-white" />
-                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[#a4abbe]">%</span>
-                            </div>
-                            <div className="px-2 py-1.5 rounded-lg text-xs font-semibold text-right" style={{ backgroundColor: '#f0fdf4', border: '1px solid rgba(20,83,45,0.2)', color: '#14532d' }}>
-                              {rev > 0 ? fmtE(rev) : '—'}
-                            </div>
-                            <button onClick={() => removeTfRow(row.id)} className="flex items-center justify-center w-7 h-7 rounded-lg text-[#a4abbe] hover:text-[#ff642e] hover:bg-red-50 transition-colors">
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        );
-                      })}
-                      <button onClick={addTfRow} className="flex items-center gap-1.5 text-xs font-medium mt-1 px-1" style={{ color: '#14532d' }}>
-                        <Plus size={13} /> Rij toevoegen
-                      </button>
-                    </div>
-                    <div className="px-5 py-3 border-t flex items-center justify-between" style={{ backgroundColor: '#f0fdf4', borderColor: 'rgba(20,83,45,0.2)' }}>
-                      <span className="text-xs font-semibold text-[#566079] uppercase tracking-wider">Totale Revenue Potentie TF</span>
-                      <span className="text-lg font-bold" style={{ color: '#14532d' }}>{totalTf > 0 ? fmtE(totalTf) : '—'}</span>
-                    </div>
+                )}
+                {tapertradeActive && (
+                  <div className="mt-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#16a34a' }}>TaperTrade</p>
+                    <ProductLinesSection leadId={leadId} product="tapertrade" accent="#16a34a" />
                   </div>
-                );
-              })()}
+                )}
+                {!taperpayActive && !tapertradeActive && (
+                  <p className="text-sm mt-1" style={{ color: '#a4abbe' }}>
+                    Activeer TaperPay of TaperTrade om productlijnen (volume + marge → revenue) toe te voegen.
+                  </p>
+                )}
               </div>
 
             </div>

@@ -2620,41 +2620,6 @@ export default function ClientsPage({ myClientsOnly = false }) {
                           )}
                         </>
                       )}
-                      {/* Revenue Potentie */}
-                      {(() => {
-                        const rows = selectedClient?.revenue_potential;
-                        if (!rows || !Array.isArray(rows) || rows.length === 0) return null;
-                        const total = rows.reduce((s, r) => s + (parseFloat(r.revenue) || 0), 0);
-                        return (
-                          <div>
-                            <p className="text-xs font-semibold uppercase mb-3" style={{ color: '#7b859e' }}>Revenue Potentie (uit lead fase)</p>
-                            <div className="rounded-xl border border-[#e8eaf2] overflow-hidden">
-                              <table className="w-full text-sm">
-                                <thead><tr style={{ backgroundColor: '#f7f8fc' }}>
-                                  {['Valutapaar', 'Volume (€)', 'Marge %', 'Revenue (€)'].map(h => (
-                                    <th key={h} className="px-4 py-2 text-left text-xs font-semibold uppercase" style={{ color: '#566079' }}>{h}</th>
-                                  ))}
-                                </tr></thead>
-                                <tbody>
-                                  {rows.map((r, i) => (
-                                    <tr key={i} className="border-t border-[#f7f8fc]">
-                                      <td className="px-4 py-2 font-mono font-medium" style={{ color: '#011745' }}>{r.pair || '—'}</td>
-                                      <td className="px-4 py-2" style={{ color: '#566079' }}>{r.volume ? `€${Number(r.volume).toLocaleString('nl-NL')}` : '—'}</td>
-                                      <td className="px-4 py-2" style={{ color: '#566079' }}>{r.margin ? `${r.margin}%` : '—'}</td>
-                                      <td className="px-4 py-2 font-semibold" style={{ color: '#3d61a4' }}>{r.revenue ? `€${Number(r.revenue).toLocaleString('nl-NL')}` : '—'}</td>
-                                    </tr>
-                                  ))}
-                                  <tr className="border-t-2 border-[#e8eaf2]" style={{ backgroundColor: '#f7f8fc' }}>
-                                    <td colSpan={3} className="px-4 py-2 text-xs font-bold uppercase" style={{ color: '#566079' }}>Totaal</td>
-                                    <td className="px-4 py-2 font-bold" style={{ color: '#011745' }}>€{total.toLocaleString('nl-NL')}</td>
-                                  </tr>
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        );
-                      })()}
-
                       {/* Compliance & contract datums */}
                       {(pd?.contract_signed_date || pd?.cdd_next_review_date || pd?.pep_cleared != null) && (
                         <div>

@@ -13,6 +13,7 @@ from app.models.user import User
 from app.models.lead import Lead, PipelineStage, LeadStatus
 from app.models.communication import CallLog
 from app.models.notification import ActivityLog, TeamTarget, ManualAchievement
+from app.routers.leads import product_lines_revenue_bulk
 
 router = APIRouter()
 
@@ -812,19 +813,19 @@ async def get_hot_prospects(
 
     prospects = query.order_by(Lead.hot_prospect_set_at.desc()).all()
 
+    # Revenue now comes from the "+" product lines (volume * margin% / 100)
+    pl_rev_map = product_lines_revenue_bulk(db, [p.id for p in prospects])
+
     result = []
     for p in prospects:
-        pd = p.prospect_data
-        fx_rev = (pd.fx_estimated_revenue or 0) if pd else 0
-        tf_rev = (pd.tf_estimated_revenue or 0) if pd else 0
+        total_rev = pl_rev_map.get(p.id, 0)
         result.append({
             "id": p.id,
             "company_name": p.company_name,
             "sales_owner_name": p.sales_owner.full_name if p.sales_owner else None,
             "sales_owner_id": p.sales_owner_id,
-            "fx_estimated_revenue": fx_rev,
-            "tf_estimated_revenue": tf_rev,
-            "total_revenue": fx_rev + tf_rev,
+            "product_lines_revenue": total_rev,
+            "total_revenue": total_rev,
             "hot_prospect_set_at": p.hot_prospect_set_at,
             "prospect_since": p.prospect_since,
         })
@@ -872,11 +873,24 @@ async def get_revenue_pipeline(
 
     leads = query.all()
 
+    # Revenue from the "+" product lines. Split fx/tf by ProductLine.product
+    # (taperpay = FX, tapertrade = TF) with a single bulk query (no N+1).
+    from app.models.lead import ProductLine
+    lead_ids = [lead.id for lead in leads]
+    fx_map: dict = {}
+    tf_map: dict = {}
+    if lead_ids:
+        for pl in db.query(ProductLine).filter(ProductLine.lead_id.in_(lead_ids)).all():
+            rev = (pl.volume or 0) * (pl.margin_pct or 0) / 100
+            if pl.product == "tapertrade":
+                tf_map[pl.lead_id] = tf_map.get(pl.lead_id, 0) + rev
+            else:
+                fx_map[pl.lead_id] = fx_map.get(pl.lead_id, 0) + rev
+
     by_stage = {s: {"count": 0, "fx_revenue": 0.0, "tf_revenue": 0.0, "total": 0.0} for s in stages}
     for lead in leads:
-        pd = lead.prospect_data
-        fx = (pd.fx_estimated_revenue or 0) if pd else 0
-        tf = (pd.tf_estimated_revenue or 0) if pd else 0
+        fx = fx_map.get(lead.id, 0)
+        tf = tf_map.get(lead.id, 0)
         s = lead.pipeline_stage
         if s in by_stage:
             by_stage[s]["count"] += 1
@@ -888,10 +902,7 @@ async def get_revenue_pipeline(
     hot_total = 0
     for lead in leads:
         if lead.is_hot_prospect and lead.pipeline_stage == PipelineStage.PROSPECT.value:
-            pd = lead.prospect_data
-            fx = (pd.fx_estimated_revenue or 0) if pd else 0
-            tf = (pd.tf_estimated_revenue or 0) if pd else 0
-            hot_total += fx + tf
+            hot_total += fx_map.get(lead.id, 0) + tf_map.get(lead.id, 0)
 
     return {
         "by_stage": by_stage,
@@ -993,19 +1004,15 @@ async def get_leaderboard(
             Lead.is_deleted == False,
         ).scalar() or 0
 
-        hot_leads = db.query(Lead).options(
-            joinedload(Lead.prospect_data)
-        ).filter(
+        hot_leads = db.query(Lead).filter(
             Lead.is_hot_prospect == True,
             Lead.pipeline_stage == PipelineStage.PROSPECT.value,
             or_(Lead.assigned_user_id == u.id, Lead.sales_owner_id == u.id),
             Lead.is_deleted == False,
         ).all()
-        pipeline_revenue = sum(
-            ((l.prospect_data.fx_estimated_revenue or 0) + (l.prospect_data.tf_estimated_revenue or 0))
-            if l.prospect_data else 0
-            for l in hot_leads
-        )
+        # Pipeline revenue = sum of the "+" product lines for these hot prospects
+        _hot_pl_map = product_lines_revenue_bulk(db, [l.id for l in hot_leads])
+        pipeline_revenue = sum(_hot_pl_map.get(l.id, 0) for l in hot_leads)
 
         score = (calls * call_pts) + (new_leads * lead_pts) + (prospects * prospect_pts) + (onboarding * onboarding_pts) + (clients * client_pts)
 

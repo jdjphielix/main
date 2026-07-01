@@ -1767,6 +1767,35 @@ async def assign_account_manager(
 
 # ── Product Lines (multi-row volumes/revenue per lead) ───────────────
 
+def product_lines_revenue(db: Session, lead_id: int, product: Optional[str] = None) -> float:
+    """Sum of ProductLine revenue for a lead = sum(volume * margin_pct / 100).
+
+    Optionally filter by product ('taperpay' | 'tapertrade'). Used by the
+    prospect/dashboard/user rollups so pipeline revenue follows the product
+    lines instead of the deprecated fx/tf single-estimate fields.
+    """
+    q = db.query(ProductLine).filter(ProductLine.lead_id == lead_id)
+    if product:
+        q = q.filter(ProductLine.product == product)
+    return sum(((pl.volume or 0) * (pl.margin_pct or 0) / 100) for pl in q.all())
+
+
+def product_lines_revenue_bulk(db: Session, lead_ids: list) -> dict:
+    """Bulk variant: {lead_id: total_revenue} for the given lead ids (no N+1).
+
+    Returns 0 for lead ids without product lines is NOT guaranteed — callers
+    should use .get(lead_id, 0). Revenue = sum(volume * margin_pct / 100).
+    """
+    result: dict = {}
+    if not lead_ids:
+        return result
+    rows = db.query(ProductLine).filter(ProductLine.lead_id.in_(list(lead_ids))).all()
+    for pl in rows:
+        rev = (pl.volume or 0) * (pl.margin_pct or 0) / 100
+        result[pl.lead_id] = result.get(pl.lead_id, 0) + rev
+    return result
+
+
 def _product_line_dict(pl: ProductLine):
     vol = pl.volume or 0
     margin = pl.margin_pct or 0

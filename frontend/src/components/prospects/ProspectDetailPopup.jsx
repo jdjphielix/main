@@ -725,23 +725,17 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
     setSaving(true);
     setSaveMsg(null);
     try {
+      // Forecasting (volumes + margins) now lives in ProductLinesSection, which
+      // saves itself. Here we only persist activation status and the TF product
+      // type flags / free-text info — NOT the deprecated fx/tf single estimates.
       const payload = {};
-      if (taperPayActive) {
-        payload.taperpay_active = true;
-        payload.fx_estimated_volume = fxDetails.volume || 0;
-        payload.fx_estimated_margin_pct = (fxDetails.margin || 0) * 100;
-      } else {
-        payload.taperpay_active = false;
-      }
+      payload.taperpay_active = !!taperPayActive;
       if (taperTradeActive) {
         payload.tapertrade_active = true;
         payload.tf_debtor_finance = tfDetails.debtorFinance || false;
         payload.tf_portfolio_finance = tfDetails.portfolioBasedFinance || false;
         payload.tf_voorraad_finance = tfDetails.voorraadFinancing || false;
-        payload.tf_total_financing_need = tfDetails.totalFacilityAmount || 0;
         payload.tf_additional_info = tfDetails.additionalInfo || '';
-        payload.tf_estimated_volume = tfDetails.volume || 0;
-        payload.tf_estimated_margin_pct = (tfDetails.margin || 0) * 100;
       } else {
         payload.tapertrade_active = false;
       }
@@ -1385,89 +1379,6 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
                 />
               </div>
 
-              {/* FX Volume and Margin */}
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-[#566079] mb-2">FX Volume (EUR)</label>
-                  <input
-                    type="number"
-                    value={fxDetails.volume || ''}
-                    onChange={(e) => setFxDetails({ ...fxDetails, volume: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 bg-[#f7f8fc] border border-[#e8eaf2] rounded-lg text-sm focus:border-[#3d61a4] focus:outline-none"
-                    placeholder="Voer volume in"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-[#566079] mb-2">Marge (%)</label>
-                  <input
-                    type="number"
-                    value={(fxDetails.margin || 0) * 100}
-                    onChange={(e) => setFxDetails({ ...fxDetails, margin: parseFloat(e.target.value) / 100 || 0 })}
-                    className="w-full px-3 py-2 bg-[#f7f8fc] border border-[#e8eaf2] rounded-lg text-sm focus:border-[#3d61a4] focus:outline-none"
-                    placeholder="Voer marge % in"
-                    step="0.01"
-                  />
-                </div>
-              </div>
-
-              {/* Revenue Card */}
-              <RevenueCard fxData={fxDetails} />
-
-              {/* Revenue Potentie (uit lead fase — gedetailleerde tabel) */}
-              {(() => {
-                let rows = [];
-                const rp = prospect._raw?.revenue_potential || prospect.revenue_potential;
-                if (Array.isArray(rp)) rows = rp;
-                else if (typeof rp === 'string') { try { rows = JSON.parse(rp); } catch { rows = []; } }
-                if (!rows || rows.length === 0) return null;
-                const fmt = (v) => new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(Number(v) || 0);
-                const totalRevenue = rows.reduce((sum, r) => {
-                  const vol = Number(r.volume) || 0;
-                  const margin = Number(r.margin_pct || r.margin) || 0;
-                  return sum + vol * (margin / 100);
-                }, 0);
-                return (
-                  <div className="rounded-xl p-4" style={{ backgroundColor: '#eef2fa', border: '1px solid #d0daf0' }}>
-                    <h4 className="text-xs font-semibold uppercase mb-3 flex items-center gap-1.5" style={{ color: '#3d61a4' }}>
-                      Revenue Potentie (uit lead fase)
-                    </h4>
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr style={{ color: '#3d61a4' }}>
-                          <th className="text-left pb-2 font-semibold">Valutapaar</th>
-                          <th className="text-right pb-2 font-semibold">Volume (€)</th>
-                          <th className="text-right pb-2 font-semibold">Marge%</th>
-                          <th className="text-right pb-2 font-semibold">Revenue (€)</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#d0daf0]">
-                        {rows.map((r, i) => {
-                          const vol = Number(r.volume) || 0;
-                          const margin = Number(r.margin_pct || r.margin) || 0;
-                          const revenue = vol * (margin / 100);
-                          const pairLabel = r.currency_pair === 'Anders' ? (r.custom_pair || 'Anders') : (r.currency_pair || '—');
-                          return (
-                            <tr key={r.id || i}>
-                              <td className="py-1.5 font-medium" style={{ color: '#011745' }}>{pairLabel}</td>
-                              <td className="py-1.5 text-right" style={{ color: '#566079' }}>{fmt(vol)}</td>
-                              <td className="py-1.5 text-right" style={{ color: '#566079' }}>{parseFloat(r.margin_pct || r.margin || 0).toFixed(2)}%</td>
-                              <td className="py-1.5 text-right font-semibold" style={{ color: '#011745' }}>{fmt(revenue)}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      <tfoot>
-                        <tr style={{ borderTop: '2px solid #3d61a4' }}>
-                          <td className="pt-2 font-bold" style={{ color: '#3d61a4' }}>Totaal</td>
-                          <td colSpan={2} />
-                          <td className="pt-2 text-right font-bold" style={{ color: '#3d61a4' }}>{fmt(totalRevenue)}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                );
-              })()}
-
               {/* Documents */}
               <div className="border-t border-[#e8eaf2] pt-6">
                 <h3 className="font-semibold text-[#011745] mb-4">Documenten</h3>
@@ -1569,93 +1480,6 @@ export default function ProspectDetailPopup({ prospect, onClose, onUpdate, onTog
                   className="w-full px-3 py-2 bg-[#f7f8fc] border border-[#e8eaf2] rounded-lg text-sm focus:border-[#3d61a4] focus:outline-none h-20"
                 />
               </div>
-
-              {/* Facility Details */}
-              <div className="grid grid-cols-3 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-[#566079] mb-2">Totale Faciliteit (EUR)</label>
-                  <input
-                    type="number"
-                    value={tfDetails.totalFacilityAmount || ''}
-                    onChange={(e) => setTfDetails({ ...tfDetails, totalFacilityAmount: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 bg-[#f7f8fc] border border-[#e8eaf2] rounded-lg text-sm focus:border-[#3d61a4] focus:outline-none"
-                    placeholder="Voer bedrag in"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-[#566079] mb-2">TF Volume (EUR)</label>
-                  <input
-                    type="number"
-                    value={tfDetails.volume || ''}
-                    onChange={(e) => setTfDetails({ ...tfDetails, volume: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 bg-[#f7f8fc] border border-[#e8eaf2] rounded-lg text-sm focus:border-[#3d61a4] focus:outline-none"
-                    placeholder="Voer volume in"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-[#566079] mb-2">Marge (%)</label>
-                  <input
-                    type="number"
-                    value={(tfDetails.margin || 0) * 100}
-                    onChange={(e) => setTfDetails({ ...tfDetails, margin: parseFloat(e.target.value) / 100 || 0 })}
-                    className="w-full px-3 py-2 bg-[#f7f8fc] border border-[#e8eaf2] rounded-lg text-sm focus:border-[#3d61a4] focus:outline-none"
-                    placeholder="Voer marge % in"
-                    step="0.01"
-                  />
-                </div>
-              </div>
-
-              {/* Revenue Card */}
-              <RevenueCard tfData={tfDetails} />
-
-              {/* TF Revenue Potentie (uit lead fase) */}
-              {(() => {
-                let rows = [];
-                const tfRaw = prospect._raw?.tf_revenue_potential || prospect.tf_revenue_potential;
-                if (Array.isArray(tfRaw)) rows = tfRaw;
-                else if (typeof tfRaw === 'string') { try { rows = JSON.parse(tfRaw); } catch { rows = []; } }
-                if (!rows || rows.length === 0) return null;
-                const fmt = (v) => new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(Number(v) || 0);
-                const totalTf = rows.reduce((sum, r) => sum + (Number(r.bedrag) || 0) * ((Number(r.percentage) || 0) / 100), 0);
-                return (
-                  <div className="rounded-xl p-4 mt-4" style={{ backgroundColor: '#fef3c7', border: '1px solid #fde68a' }}>
-                    <h4 className="text-xs font-semibold uppercase mb-3" style={{ color: '#92400e' }}>
-                      TF Revenue Potentie (uit lead fase)
-                    </h4>
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr style={{ color: '#92400e' }}>
-                          <th className="text-left pb-2 font-semibold">Product</th>
-                          <th className="text-right pb-2 font-semibold">Bedrag (€)</th>
-                          <th className="text-right pb-2 font-semibold">Marge%</th>
-                          <th className="text-right pb-2 font-semibold">Revenue (€)</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#fde68a]">
-                        {rows.map((r, i) => {
-                          const bedrag = Number(r.bedrag) || 0;
-                          const pct = Number(r.percentage) || 0;
-                          return (
-                            <tr key={r.id || i}>
-                              <td className="py-1.5 font-medium" style={{ color: '#011745' }}>{r.product || '—'}</td>
-                              <td className="py-1.5 text-right" style={{ color: '#566079' }}>{fmt(bedrag)}</td>
-                              <td className="py-1.5 text-right" style={{ color: '#566079' }}>{pct.toFixed(2)}%</td>
-                              <td className="py-1.5 text-right font-semibold" style={{ color: '#011745' }}>{fmt(bedrag * pct / 100)}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      <tfoot>
-                        <tr style={{ borderTop: '2px solid #d97706' }}>
-                          <td className="pt-2 font-bold" style={{ color: '#92400e' }}>Totaal</td>
-                          <td colSpan={2} />
-                          <td className="pt-2 text-right font-bold" style={{ color: '#92400e' }}>{fmt(totalTf)}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                );
-              })()}
 
               {/* Documents */}
               <div className="border-t border-[#e8eaf2] pt-6">

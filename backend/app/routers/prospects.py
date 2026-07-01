@@ -9,8 +9,9 @@ from datetime import datetime, timezone
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
 from app.models.user import User
-from app.models.lead import Lead, PipelineStage, ProspectData, ProspectCurrency
+from app.models.lead import Lead, PipelineStage, ProspectData, ProspectCurrency, ProductLine
 from app.models.notification import ActivityLog
+from app.routers.leads import product_lines_revenue, product_lines_revenue_bulk
 
 router = APIRouter()
 
@@ -28,14 +29,22 @@ def _serialize_obj(obj):
     return data
 
 
-def _serialize_prospect_data(pd):
+def _serialize_prospect_data(pd, pl_revenue=None):
     if not pd:
+        # Even without a ProspectData row we may still have product lines
+        # (activation can happen in the lead phase). Surface the revenue so the
+        # prospects list rollup does not fall to 0.
+        if pl_revenue is not None:
+            return {"product_lines_revenue": pl_revenue}
         return None
     return {
         "id": pd.id,
         "lead_id": pd.lead_id,
         "taperpay_active": pd.taperpay_active,
         "tapertrade_active": pd.tapertrade_active,
+        # Revenue from the "+" product lines (volume * margin% / 100).
+        # This is the single source of truth for prospect forecasting.
+        "product_lines_revenue": pl_revenue,
         "fx_estimated_volume": pd.fx_estimated_volume,
         "fx_estimated_margin_pct": pd.fx_estimated_margin_pct,
         "fx_estimated_revenue": pd.fx_estimated_revenue,
@@ -82,11 +91,11 @@ def _serialize_prospect_data(pd):
     }
 
 
-def _serialize_prospect(p, owner_name=None):
+def _serialize_prospect(p, owner_name=None, pl_revenue=None):
     """Serialize a Lead in prospect stage with prospect_data and contact_methods."""
     data = _serialize_obj(p)
     data["sales_owner_name"] = owner_name
-    data["prospect_data"] = _serialize_prospect_data(p.prospect_data)
+    data["prospect_data"] = _serialize_prospect_data(p.prospect_data, pl_revenue)
     # Include contact_methods so the prospect view can show extra contacts
     data["contact_methods"] = [
         {
@@ -197,8 +206,14 @@ async def list_prospects(
         owners = db.query(User).filter(User.id.in_(owner_ids)).all()
         owner_map = {u.id: u.full_name for u in owners}
 
+    # Bulk product-line revenue for all prospects on this page (no N+1)
+    pl_rev_map = product_lines_revenue_bulk(db, [p.id for p in prospects])
+
     return {
-        "prospects": [_serialize_prospect(p, owner_map.get(p.sales_owner_id)) for p in prospects],
+        "prospects": [
+            _serialize_prospect(p, owner_map.get(p.sales_owner_id), pl_rev_map.get(p.id, 0))
+            for p in prospects
+        ],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -223,7 +238,8 @@ async def get_prospect(
     if not prospect:
         raise HTTPException(status_code=404, detail="Prospect not found")
 
-    return _serialize_prospect(prospect)
+    pl_rev = product_lines_revenue(db, prospect.id)
+    return _serialize_prospect(prospect, pl_revenue=pl_rev)
 
 
 @router.put("/{lead_id}/prospect-data")
@@ -275,7 +291,7 @@ async def update_prospect_data(
     db.add(activity)
     db.commit()
 
-    return _serialize_prospect_data(prospect_data)
+    return _serialize_prospect_data(prospect_data, product_lines_revenue(db, lead_id))
 
 
 @router.post("/{lead_id}/currencies")

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import EmailThreadsPanel from '../components/leads/EmailThreadsPanel';
+import ProductLinesSection from '../components/common/ProductLinesSection';
 
 const token = () => sessionStorage.getItem('auth_token');
 
@@ -1209,44 +1210,32 @@ function KYCProfile({ lead, prospectData, onBrokerChange }) {
             </div>
           )}
 
-          {/* FX Volumes */}
-          {pd && (pd.fx_estimated_volume || pd.tf_estimated_volume) && (
-            <div className="rounded-xl p-4" style={{ backgroundColor: '#f7f8fc' }}>
-              <h4 className="text-xs font-semibold uppercase mb-2" style={{ color: '#7b859e' }}>Volumes & Revenue</h4>
-              <div className="grid grid-cols-2 gap-4">
-                {pd.fx_estimated_volume > 0 && (
-                  <div className="bg-white rounded-lg p-3 border border-[#e8eaf2]">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <DollarSign size={12} style={{ color: '#3d61a4' }} />
-                      <span className="text-[10px] font-semibold uppercase" style={{ color: '#3d61a4' }}>FX</span>
-                    </div>
-                    <p className="text-sm font-bold" style={{ color: '#011745' }}>{fmtCurrency(pd.fx_estimated_volume)}</p>
-                    <p className="text-[10px]" style={{ color: '#7b859e' }}>Marge: {fmtPct(pd.fx_estimated_margin_pct)} = {fmtCurrency(pd.fx_estimated_revenue)}</p>
-                  </div>
-                )}
-                {pd.tf_estimated_volume > 0 && (
-                  <div className="bg-white rounded-lg p-3 border border-[#e8eaf2]">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <TrendingUp size={12} style={{ color: '#92400e' }} />
-                      <span className="text-[10px] font-semibold uppercase" style={{ color: '#92400e' }}>Trade Finance</span>
-                    </div>
-                    <p className="text-sm font-bold" style={{ color: '#011745' }}>{fmtCurrency(pd.tf_estimated_volume)}</p>
-                    <p className="text-[10px]" style={{ color: '#7b859e' }}>Marge: {fmtPct(pd.tf_estimated_margin_pct)} = {fmtCurrency(pd.tf_estimated_revenue)}</p>
+          {/* Forecasting — product lines (volume + marge → revenue) */}
+          <div className="rounded-xl p-4" style={{ backgroundColor: '#f7f8fc' }}>
+            <h4 className="text-xs font-semibold uppercase mb-2" style={{ color: '#7b859e' }}>Forecasting (volumes & revenue)</h4>
+            {pd?.taperpay_active && (
+              <div className="mb-3">
+                <p className="text-[10px] font-semibold uppercase mb-1" style={{ color: '#3d61a4' }}>TaperPay</p>
+                <ProductLinesSection leadId={lead.id} product="taperpay" accent="#3d61a4" />
+              </div>
+            )}
+            {pd?.tapertrade_active && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase mb-1" style={{ color: '#16a34a' }}>TaperTrade</p>
+                <ProductLinesSection leadId={lead.id} product="tapertrade" accent="#16a34a" />
+                {(pd.tf_debtor_finance || pd.tf_portfolio_finance || pd.tf_voorraad_finance) && (
+                  <div className="mt-2 flex gap-2 flex-wrap">
+                    {pd.tf_debtor_finance && <span className="text-[10px] px-2 py-0.5 rounded bg-[#eef2fa] text-[#3d61a4]">Debtor Finance</span>}
+                    {pd.tf_portfolio_finance && <span className="text-[10px] px-2 py-0.5 rounded bg-[#eef2fa] text-[#3d61a4]">Portfolio Finance</span>}
+                    {pd.tf_voorraad_finance && <span className="text-[10px] px-2 py-0.5 rounded bg-[#eef2fa] text-[#3d61a4]">Voorraad Finance</span>}
                   </div>
                 )}
               </div>
-              {pd.tapertrade_active && (
-                <div className="mt-2 flex gap-2 flex-wrap">
-                  {pd.tf_debtor_finance && <span className="text-[10px] px-2 py-0.5 rounded bg-[#eef2fa] text-[#3d61a4]">Debtor Finance</span>}
-                  {pd.tf_portfolio_finance && <span className="text-[10px] px-2 py-0.5 rounded bg-[#eef2fa] text-[#3d61a4]">Portfolio Finance</span>}
-                  {pd.tf_voorraad_finance && <span className="text-[10px] px-2 py-0.5 rounded bg-[#eef2fa] text-[#3d61a4]">Voorraad Finance</span>}
-                  {pd.tf_total_financing_need > 0 && (
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-[#f3f4f8] text-[#566079]">Totaal: {fmtCurrency(pd.tf_total_financing_need)}</span>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+            )}
+            {!pd?.taperpay_active && !pd?.tapertrade_active && (
+              <p className="text-xs" style={{ color: '#a4abbe' }}>Geen producten geactiveerd voor dit dossier.</p>
+            )}
+          </div>
 
           {/* Currencies & Countries */}
           {currencies.length > 0 && (
