@@ -172,11 +172,10 @@ async def list_prospects(
         # "Mijn lijst": only my own assigned prospects (all roles)
         query = query.filter(Lead.sales_owner_id == current_user.id)
     elif mine is False:
-        # "Algemeen": admin/teamleider ziet ALLE prospects; sales ziet alleen unowned pool
-        _is_tl_or_admin = current_user.is_teamleader or current_user.role in ('admin_pay', 'admin_trade', 'teamleader')
-        if not _is_tl_or_admin:
-            query = query.filter(Lead.sales_owner_id == None)
-        # Admin/teamleider: geen extra filter => zien alles
+        # "Algemeen" = alleen de niet-toegewezen pool (net als bij leads: algemeen = ongelockt).
+        # Zo verschijnt een prospect die iemand bezit ALLEEN in diens "Mijn Prospects",
+        # en niet dubbel in Algemeen — geldt voor alle rollen, ook admin/teamleider.
+        query = query.filter(Lead.sales_owner_id == None)
     else:
         # No tab filter: admins see all; sales users see own + unowned
         if not is_admin:

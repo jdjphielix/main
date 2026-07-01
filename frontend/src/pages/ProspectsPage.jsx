@@ -130,12 +130,12 @@ export default function ProspectsPage() {
       if (searchQuery) params.set('search', searchQuery);
       if (filters.taperPayActive !== null) params.set('taperpay', String(filters.taperPayActive));
       if (filters.taperTradeActive !== null) params.set('tapertrade', String(filters.taperTradeActive));
-      // mine param: extern=always own, others=tab-based
+      // mine param: extern=always own; 'mijn'=own; 'algemeen'=niet-toegewezen pool (alle rollen)
       if (isExtern) {
         params.set('mine', 'true');
       } else if (listTab === 'mijn') {
         params.set('mine', 'true');
-      } else if (listTab === 'algemeen' && !isSalesOnly) {
+      } else if (listTab === 'algemeen') {
         params.set('mine', 'false');
       }
 
